@@ -287,8 +287,13 @@ def _parse_outline(data: dict) -> StoryOutline:
     )
 
 
-async def generate_story_outline(user_theme: str | None = None) -> StoryOutline:
-    """根据可选主题或随机选择主题/角色/场景，调用 LLM 生成故事大纲。"""
+async def generate_story_outline(
+    user_theme: str | None = None,
+    total_pages: int | None = None,
+    no_interaction: bool = False,
+) -> StoryOutline:
+    """根据可选主题或随机选择主题/角色/场景，调用 LLM 生成故事大纲。
+    total_pages 指定则生成恰好该页数；no_interaction 为 True 时所有段落的 interaction_point 均为 null。"""
     if user_theme and user_theme.strip():
         # 用户指定主题（如龟兔赛跑、小兔子找妈妈）
         theme_desc = user_theme.strip()
@@ -309,6 +314,10 @@ async def generate_story_outline(user_theme: str | None = None) -> StoryOutline:
 主角：{character.name}，{character.species}，{character.trait}，外观（英文）：{character.appearance}
 场景：{setting.location}，{setting.time}，{setting.weather}，视觉（英文）：{setting.visual_description}
 """
+    if total_pages is not None and total_pages >= 1:
+        user_content += f"\n**篇幅要求（必须严格遵守）**：请生成恰好 {total_pages} 页（段），segments 数组长度必须为 {total_pages}。"
+    if no_interaction:
+        user_content += "\n**不要任何互动节点**：所有段落的 interaction_point 必须为 null，这是一个纯叙述故事。"
     settings = get_settings()
     client = AsyncOpenAI(
         base_url=settings.llm_api_base.rstrip("/"),

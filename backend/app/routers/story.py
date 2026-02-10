@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from app.models.story import InteractRequest
 from app.routers.auth import get_current_user
+from app.constants.voices import DEFAULT_VOICE_ID, is_valid_voice
 from app.services.story_engine import (
     start_new_story,
     get_story,
@@ -13,6 +14,7 @@ from app.services.story_engine import (
     handle_interaction,
     preload_segment_image,
 )
+from app.services.tts_service import HAS_EDGE_TTS, get_or_generate_segment_audio
 from app.utils.store import list_stories
 
 logger = logging.getLogger(__name__)
@@ -21,8 +23,9 @@ router = APIRouter(prefix="/api/story", tags=["story"])
 
 
 class StartStoryRequest(BaseModel):
-    """开始故事请求，主题可选。"""
+    """开始故事请求，主题与页数可选。"""
     theme: str | None = None  # 如 "龟兔赛跑"；空或省略则随机故事
+    total_pages: int | None = None  # 指定则生成固定页数；3–4 页无互动，5 页及以上带互动
 
 
 @router.post("/start")
@@ -30,13 +33,17 @@ async def start(
     body: StartStoryRequest | None = None,
     current_user: dict = Depends(get_current_user),
 ):
-    """开始一个新故事（需登录）。可传 theme 指定主题，不传则随机。"""
+    """开始一个新故事（需登录）。可传 theme 指定主题、total_pages 指定页数。"""
     theme = None
     if body and body.theme and isinstance(body.theme, str):
         t = body.theme.strip()
         theme = t if t else None
+    total_pages = getattr(body, "total_pages", None) if body else None
+    if total_pages is not None and (total_pages < 3 or total_pages > 20):
+        raise HTTPException(status_code=400, detail="页数至少 3 页、最多 20 页")
+    no_interaction = total_pages is not None and 3 <= total_pages < 5
     try:
-        state = await start_new_story(user_theme=theme)
+        state = await start_new_story(user_theme=theme, total_pages=total_pages, no_interaction=no_interaction)
         seg, has_interaction = get_current_segment(state)
         return {
             "story_id": state.id,
@@ -112,6 +119,64 @@ async def get_segment_image(story_id: str, segment_index: int):
         "image_url": seg.image_url,
         "has_image": seg.image_url is not None,
     }
+
+
+@router.get("/{story_id}/segment/{segment_index}/audio")
+async def get_segment_audio(
+    story_id: str,
+    segment_index: int,
+    voice_id: str | None = None,
+    speed: float = 1.0,
+):
+    """获取或生成指定段落的 TTS 音频（edge-tts），用于前端朗读。"""
+    if not HAS_EDGE_TTS:
+        raise HTTPException(status_code=503, detail="TTS 服务不可用（edge-tts 未安装）")
+
+    state = get_story(story_id)
+    if not state:
+        raise HTTPException(status_code=404, detail="故事不存在")
+    if segment_index < 0 or segment_index >= len(state.segments):
+        raise HTTPException(status_code=404, detail="段落不存在")
+
+    seg = state.segments[segment_index]
+    text = (seg.text or "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="该段落没有可朗读的文本")
+
+    # speed 限制范围，避免异常值
+    try:
+        speed = float(speed)
+    except Exception:
+        speed = 1.0
+    speed = max(0.5, min(2.0, speed))
+
+    # voice 校验；无效则回退默认
+    vid = (voice_id or "").strip() or DEFAULT_VOICE_ID
+    if not is_valid_voice(vid):
+        vid = DEFAULT_VOICE_ID
+
+    try:
+        audio_path = await get_or_generate_segment_audio(
+            story_id=story_id,
+            segment_index=segment_index,
+            text=text,
+            voice_id=vid,
+            speed=speed,
+        )
+        return {
+            "story_id": story_id,
+            "segment_index": segment_index,
+            "voice_id": vid,
+            "speed": speed,
+            "audio_path": audio_path,
+            "audio_url": f"/api/audio/{audio_path}",
+        }
+    except Exception as e:
+        logger.error(
+            f"[API] 段落音频生成失败: story_id={story_id}, segment_index={segment_index}, voice={vid}, speed={speed}, error={e}",
+            exc_info=True,
+        )
+        raise HTTPException(status_code=500, detail="段落音频生成失败")
 
 
 @router.post("/{story_id}/next")

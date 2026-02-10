@@ -5,8 +5,10 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from app.config import get_settings
-from app.routers import story, video, auth
+from app.routers import story, video, auth, voices, audio
 from app.utils.store import load_stories_from_disk
+from app.services.tts_service import pregenerate_all_previews
+import asyncio
 
 # 配置日志
 logging.basicConfig(
@@ -24,6 +26,10 @@ async def lifespan(app: FastAPI):
     # 启动时：加载故事数据
     logger.info("========== 应用启动 ==========")
     load_stories_from_disk()
+    
+    # 后台预生成音色预览（不阻塞启动）
+    asyncio.create_task(pregenerate_all_previews())
+    
     logger.info("========== 应用启动完成 ==========")
     yield
     # 关闭时：清理资源（如需要）
@@ -52,6 +58,8 @@ app.mount("/static/images", StaticFiles(directory=str(images_dir)), name="images
 app.include_router(auth.router)
 app.include_router(story.router)
 app.include_router(video.router)
+app.include_router(voices.router)
+app.include_router(audio.router)
 
 
 @app.get("/")

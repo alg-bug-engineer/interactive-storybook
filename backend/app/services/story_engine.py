@@ -10,13 +10,33 @@ from app.utils.store import save_story, get_story, update_story, new_story_id
 logger = logging.getLogger(__name__)
 
 
-async def start_new_story(user_theme: str | None = None) -> StoryState:
-    """生成新故事：大纲 + 第一段配图。user_theme 为空则随机主题。"""
-    outline: StoryOutline = await generate_story_outline(user_theme=user_theme)
+async def start_new_story(
+    user_theme: str | None = None,
+    total_pages: int | None = None,
+    no_interaction: bool = False,
+) -> StoryState:
+    """生成新故事：大纲 + 第一段配图。user_theme 为空则随机主题。
+    total_pages 指定则生成固定页数；no_interaction 为 True 时不设互动节点，且后台依次生成全部插画（不等待用户翻页）。"""
+    outline: StoryOutline = await generate_story_outline(
+        user_theme=user_theme,
+        total_pages=total_pages,
+        no_interaction=no_interaction,
+    )
     story_id = new_story_id()
     segments = list(outline.segments)
     if not segments:
         raise ValueError("故事大纲没有段落")
+    if no_interaction:
+        for i, seg in enumerate(segments):
+            if seg.interaction_point is not None:
+                segments[i] = StorySegment(
+                    id=seg.id,
+                    text=seg.text,
+                    scene_description=seg.scene_description,
+                    emotion=seg.emotion,
+                    interaction_point=None,
+                    image_url=seg.image_url,
+                )
 
     # 为第一段生成图片
     first = segments[0]
@@ -35,9 +55,14 @@ async def start_new_story(user_theme: str | None = None) -> StoryState:
     )
     save_story(state)
 
-    # 异步预生成第二段图片（若有）
     if len(segments) > 1:
-        asyncio.create_task(_pregenerate_image(story_id, 1))
+        if no_interaction:
+            # 无互动模式：后台依次生成剩余全部插画，不等待用户翻页
+            asyncio.create_task(
+                _generate_images_async(story_id, 1, len(segments) - 1, outline.characters)
+            )
+        else:
+            asyncio.create_task(_pregenerate_image(story_id, 1))
 
     return state
 

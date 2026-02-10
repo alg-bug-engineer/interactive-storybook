@@ -6,6 +6,9 @@ pydantic-settings>=2.1.0
 python-dotenv>=1.0.0
 openai>=1.12.0
 
+# TTS 语音合成
+edge-tts>=6.1.0
+
 # 图片处理
 Pillow>=10.0.0
 

@@ -73,15 +73,19 @@ export async function upgradeToPaid(token: string): Promise<AuthUser> {
   return data.user;
 }
 
-/** 开始故事（需登录，传入 token）。theme 为空或省略则随机一个儿童故事。 */
+/** 开始故事（需登录，传入 token）。theme 为空或省略则随机；total_pages 指定则生成固定页数（3–4 页无互动，5 页及以上带互动）。 */
 export async function startStory(
   theme?: string | null,
-  token?: string | null
+  token?: string | null,
+  totalPages?: number
 ): Promise<StoryStartResponse> {
+  const body: { theme?: string; total_pages?: number } = {};
+  if (theme) body.theme = theme;
+  if (totalPages !== undefined && totalPages >= 3) body.total_pages = totalPages;
   const res = await fetch(`${API}/api/story/start`, {
     method: "POST",
     headers: authHeaders(token ?? null),
-    body: JSON.stringify(theme ? { theme } : {}),
+    body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error(await res.text());
   return res.json();
@@ -111,6 +115,30 @@ export async function getStory(storyId: string): Promise<StoryStateResponse> {
 
 export async function nextSegment(storyId: string): Promise<NextSegmentResponse> {
   const res = await fetch(`${API}/api/story/${storyId}/next`, { method: "POST" });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function getSegmentAudio(
+  storyId: string,
+  segmentIndex: number,
+  voiceId?: string | null,
+  speed?: number
+): Promise<{
+  story_id: string;
+  segment_index: number;
+  voice_id: string;
+  speed: number;
+  audio_path: string;
+  audio_url: string; // 后端返回的相对 URL，如 /api/audio/data/audio/tts/xxx.mp3
+}> {
+  const params = new URLSearchParams();
+  if (voiceId) params.set("voice_id", voiceId);
+  if (typeof speed === "number") params.set("speed", String(speed));
+  const qs = params.toString();
+  const res = await fetch(
+    `${API}/api/story/${storyId}/segment/${segmentIndex}/audio${qs ? `?${qs}` : ""}`
+  );
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }
@@ -257,4 +285,83 @@ export async function getVideoClips(storyId: string): Promise<{
   const res = await fetch(`${API}/api/video/clips/${storyId}`);
   if (!res.ok) throw new Error(await res.text());
   return res.json();
+}
+
+// ========== 音色 API ==========
+
+export interface Voice {
+  id: string;
+  name: string;
+  gender: "male" | "female";
+  description: string;
+  tags: string[];
+  recommended_for: string[];
+  is_default: boolean;
+  is_recommended: boolean;
+}
+
+export async function listVoices(): Promise<{
+  voices: Voice[];
+  default_voice_id: string;
+  tts_available: boolean;
+}> {
+  const res = await fetch(`${API}/api/voices/list`);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function getRecommendedVoices(): Promise<{
+  voices: Voice[];
+  default_voice_id: string;
+}> {
+  const res = await fetch(`${API}/api/voices/recommended`);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function previewVoice(voiceId: string): Promise<{
+  voice_id: string;
+  audio_url: string;
+  voice_info: Voice;
+}> {
+  const res = await fetch(`${API}/api/voices/preview/${voiceId}`);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function saveVoicePreferences(
+  preferences: {
+    preferred_voice?: string;
+    playback_speed?: number;
+  },
+  token?: string | null
+): Promise<{
+  success: boolean;
+  message: string;
+  preferences: any;
+}> {
+  const res = await fetch(`${API}/api/voices/preferences`, {
+    method: "POST",
+    headers: authHeaders(token ?? null),
+    body: JSON.stringify(preferences),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function getVoicePreferences(
+  token?: string | null
+): Promise<{
+  preferred_voice: string;
+  playback_speed: number;
+}> {
+  const res = await fetch(`${API}/api/voices/preferences`, {
+    headers: authHeaders(token ?? null),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export function getAudioUrl(path: string): string {
+  return `${API}/api/audio/${path}`;
 }

@@ -45,6 +45,15 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials | None = De
     return user
 
 
+async def get_current_user_optional(credentials: HTTPAuthorizationCredentials | None = Depends(security)):
+    """依赖：可选登录，如果已登录返回用户信息 dict，未登录返回 None。"""
+    email = _get_current_email(credentials)
+    if not email:
+        return None
+    user = get_user_by_email(email)
+    return user
+
+
 @router.post("/register")
 async def register(body: RegisterRequest):
     """注册：邮箱+密码，校验邮箱格式，注册后为免费用户。"""

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   startStory,
   getStory,
@@ -14,7 +14,9 @@ import {
 } from "@/services/api";
 import StoryScreen from "@/components/StoryScreen";
 import AuthModal from "@/components/AuthModal";
+import VoiceSelector from "@/components/VoiceSelector";
 import { useAuthStore } from "@/stores/authStore";
+import { useVoiceStore } from "@/stores/voiceStore";
 
 const GALLERY_VISIBLE_INITIAL = 6;
 
@@ -39,17 +41,22 @@ export default function Home() {
   const [error, setError] = useState("");
   const [story, setStory] = useState<StoryStartResponse | null>(null);
   const [themeInput, setThemeInput] = useState("");
+  const [pageCountInput, setPageCountInput] = useState("");
   const [gallery, setGallery] = useState<StoryGalleryItem[]>([]);
   const [galleryExpanded, setGalleryExpanded] = useState(false);
   const [loadingGallery, setLoadingGallery] = useState(false);
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [authModalTab, setAuthModalTab] = useState<"login" | "register">("login");
+  const [voiceSelectorOpen, setVoiceSelectorOpen] = useState(false);
 
   const { token, user, setAuth, logout, loadFromStorage, setUser } = useAuthStore();
+  const { loadVoices, loadPreferences, getSelectedVoice } = useVoiceStore();
 
   useEffect(() => {
     loadFromStorage();
-  }, [loadFromStorage]);
+    // 加载音色列表
+    loadVoices();
+  }, [loadFromStorage, loadVoices]);
 
   useEffect(() => {
     if (token && !user) {
@@ -58,6 +65,13 @@ export default function Home() {
         .catch(() => logout());
     }
   }, [token, user, setUser, logout]);
+
+  // 登录后加载用户音色偏好
+  useEffect(() => {
+    if (token) {
+      loadPreferences(token);
+    }
+  }, [token, loadPreferences]);
 
   const loadGallery = useCallback(async () => {
     setLoadingGallery(true);
@@ -80,10 +94,21 @@ export default function Home() {
       setAuthModalOpen(true);
       return;
     }
+    const totalPages = pageCountInput.trim() ? parseInt(pageCountInput.trim(), 10) : undefined;
+    if (totalPages !== undefined) {
+      if (Number.isNaN(totalPages) || totalPages < 1) {
+        setError("请输入有效的页数（留空则随机）");
+        return;
+      }
+      if (totalPages < 3) {
+        alert("故事太短了，至少需要 3 页哦～");
+        return;
+      }
+    }
     setLoading(true);
     setError("");
     try {
-      const data = await startStory(theme, token);
+      const data = await startStory(theme, token, totalPages);
       setStory(data);
       await loadGallery();
     } catch (e) {
@@ -144,10 +169,25 @@ export default function Home() {
   const visibleGallery = galleryExpanded ? gallery : gallery.slice(0, GALLERY_VISIBLE_INITIAL);
   const hasMoreGallery = gallery.length > GALLERY_VISIBLE_INITIAL;
 
+  const selectedVoice = getSelectedVoice();
+
   return (
     <main className="min-h-screen flex flex-col items-center p-6 pb-12">
       {/* 顶部：登录/注册 或 用户信息 */}
-      <header className="absolute top-0 right-0 p-4 flex items-center gap-2">
+      <header className="absolute top-0 right-0 p-4 flex items-center gap-3">
+        {/* 音色选择按钮 */}
+        <button
+          type="button"
+          onClick={() => setVoiceSelectorOpen(true)}
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-white border-2 border-primary/30 rounded-lg hover:border-primary/50 transition-colors text-sm"
+          title="选择朗读音色"
+        >
+          <span>🎙️</span>
+          <span className="hidden sm:inline text-text-ui">
+            {selectedVoice ? selectedVoice.name : "音色"}
+          </span>
+        </button>
+
         {user ? (
           <>
             <span className="text-text-ui text-sm truncate max-w-[120px]" title={user.email}>
@@ -190,6 +230,29 @@ export default function Home() {
         defaultTab={authModalTab}
       />
 
+      {/* 音色选择器模态框 */}
+      <AnimatePresence>
+        {voiceSelectorOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+            onClick={() => setVoiceSelectorOpen(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-white rounded-2xl shadow-2xl max-w-5xl w-full max-h-[90vh] overflow-y-auto"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <VoiceSelector onClose={() => setVoiceSelectorOpen(false)} />
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -202,7 +265,7 @@ export default function Home() {
           听故事、看画面、一起玩——每次都是新故事
         </p>
 
-        {/* 主题输入框 + 向右箭头确认 */}
+        {/* 主题输入框 + 页码(可选) + 向右箭头确认 */}
         <div className="flex items-center gap-2 mb-3">
           <input
             type="text"
@@ -210,7 +273,19 @@ export default function Home() {
             onChange={(e) => setThemeInput(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleSubmitTheme()}
             placeholder="输入故事主题，如：龟兔赛跑、小兔子找妈妈"
-            className="flex-1 px-4 py-3 rounded-story-md border-2 border-primary/30 bg-white placeholder:text-text-ui/60 focus:border-primary focus:outline-none"
+            className="flex-1 min-w-0 px-4 py-3 rounded-story-md border-2 border-primary/30 bg-white placeholder:text-text-ui/60 focus:border-primary focus:outline-none"
+            disabled={loading}
+          />
+          <input
+            type="number"
+            min={1}
+            max={20}
+            value={pageCountInput}
+            onChange={(e) => setPageCountInput(e.target.value.replace(/[^0-9]/g, ""))}
+            onKeyDown={(e) => e.key === "Enter" && handleSubmitTheme()}
+            placeholder="页数"
+            title="留空则随机页数；填 5 及以上为固定页数且带互动；填 3、4 为固定页数无互动"
+            className="w-14 px-2 py-3 rounded-story-md border-2 border-primary/30 bg-white placeholder:text-text-ui/60 focus:border-primary focus:outline-none text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
             disabled={loading}
           />
           <button

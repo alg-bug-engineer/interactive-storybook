@@ -41,7 +41,7 @@ def validate_email(email: str) -> bool:
 
 
 def get_user_by_email(email: str) -> Optional[dict]:
-    """按邮箱读取用户，返回 None 或 { email, is_paid, created_at }（不含密码）"""
+    """按邮箱读取用户，返回 None 或 { email, is_paid, created_at, preferred_voice, playback_speed }（不含密码）"""
     email = email.strip().lower()
     path = _users_dir() / _email_to_filename(email)
     if not path.exists():
@@ -52,6 +52,8 @@ def get_user_by_email(email: str) -> Optional[dict]:
             "email": data["email"],
             "is_paid": data.get("is_paid", False),
             "created_at": data.get("created_at", ""),
+            "preferred_voice": data.get("preferred_voice"),
+            "playback_speed": data.get("playback_speed", 1.0),
         }
     except Exception:
         return None
@@ -139,3 +141,45 @@ def delete_token(token: str) -> None:
     tokens = _load_tokens()
     tokens.pop(token, None)
     _save_tokens(tokens)
+
+
+def update_user_preferences(email: str, preferences: dict) -> None:
+    """
+    更新用户偏好设置（音色、播放倍速等）
+    
+    Args:
+        email: 用户邮箱
+        preferences: 偏好字典，可包含 preferred_voice, playback_speed 等字段
+    """
+    email = email.strip().lower()
+    path = _users_dir() / _email_to_filename(email)
+    if not path.exists():
+        raise ValueError("用户不存在")
+    
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        
+        # 更新偏好字段
+        if "preferred_voice" in preferences:
+            data["preferred_voice"] = preferences["preferred_voice"]
+        if "playback_speed" in preferences:
+            data["playback_speed"] = preferences["playback_speed"]
+        
+        # 保存
+        path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    except json.JSONDecodeError:
+        raise ValueError("用户数据损坏")
+
+
+def get_user_full(email: str) -> Optional[dict]:
+    """
+    获取用户完整数据（包含密码哈希），仅用于内部操作
+    """
+    email = email.strip().lower()
+    path = _users_dir() / _email_to_filename(email)
+    if not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
