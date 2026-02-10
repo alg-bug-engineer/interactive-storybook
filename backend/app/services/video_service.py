@@ -91,6 +91,13 @@ class VideoGenerationStatus:
     COMPLETED = "completed"
     FAILED = "failed"
 
+# 即梦视频模型配置
+# - DEFAULT_VIDEO_MODEL：原先使用的 jimeng-video-3.5-pro，只支持 5/10 秒
+# - LONG_VIDEO_MODEL：最新的 4.0 系列模型，支持 15 秒
+DEFAULT_VIDEO_MODEL = "jimeng-video-3.5-pro"
+LONG_VIDEO_MODEL = "jimeng-video-4.0-pro"
+LONG_VIDEO_MAX_DURATION = 15
+
 
 async def submit_video_clip_request(
     segment_index: int,
@@ -111,8 +118,17 @@ async def submit_video_clip_request(
     url = f"{settings.jimeng_api_base_url.rstrip('/')}/v1/videos/generations"
     headers = {"Authorization": f"Bearer {settings.jimeng_session_id}"}
     duration_int = int(duration)
-    if duration_int not in [5, 10]:
+    # 统一限制到 5/10/15 秒，超出范围回退到 5 秒
+    if duration_int not in [5, 10, LONG_VIDEO_MAX_DURATION]:
         duration_int = 5
+
+    # 根据时长选择模型：
+    # - 5/10 秒：使用旧模型（3.5-pro）
+    # - 15 秒：使用新模型（4.0-pro，支持 15 秒）
+    if duration_int > 10:
+        model = LONG_VIDEO_MODEL
+    else:
+        model = DEFAULT_VIDEO_MODEL
 
     logger.info(f"[视频服务] 准备提交片段 {segment_index}：起始图={start_image_url[:80]}, 结束图={end_image_url[:80]}")
     
@@ -129,7 +145,7 @@ async def submit_video_clip_request(
         "image_file_2": ("last_frame.png", open(end_image_path, "rb"), "image/png"),
     }
     data = {
-        "model": "jimeng-video-3.5-pro",
+        "model": model,
         "prompt": prompt or "smooth transition, cinematic camera movement",
         "duration": str(duration_int),
     }
@@ -242,7 +258,7 @@ async def generate_video_clip(
     Args:
         start_image_url: 起始帧图片 URL（可以是本地路径或网络URL）
         end_image_url: 结束帧图片 URL（可以是本地路径或网络URL）
-        duration: 视频时长（秒），支持 5 或 10 秒
+        duration: 视频时长（秒），支持 5 / 10 / 15 秒（15 秒需 4.0 系列模型）
         prompt: 可选的运动提示词
     
     Returns:
@@ -254,11 +270,17 @@ async def generate_video_clip(
         "Authorization": f"Bearer {settings.jimeng_session_id}",
     }
     
-    # 确保duration是5或10秒（jimeng-video-3.5-pro支持的值）
+    # 确保 duration 是 5 / 10 / 15 秒
     duration_int = int(duration)
-    if duration_int not in [5, 10]:
+    if duration_int not in [5, 10, LONG_VIDEO_MAX_DURATION]:
         logger.warning(f"[视频服务] duration={duration_int} 不在支持范围，调整为 5 秒")
         duration_int = 5
+
+    # 选择模型：>10 秒使用 4.0 模型，其余使用 3.5 模型
+    if duration_int > 10:
+        model = LONG_VIDEO_MODEL
+    else:
+        model = DEFAULT_VIDEO_MODEL
     
     # 将图片URL转换为本地文件路径
     start_image_path = await _url_to_local_path(start_image_url)
@@ -274,7 +296,7 @@ async def generate_video_clip(
     }
     
     data = {
-        "model": "jimeng-video-3.5-pro",  # 使用文档推荐的默认模型
+        "model": model,  # 根据时长自动选择模型
         "prompt": prompt or "smooth transition, cinematic camera movement",
         "duration": str(duration_int),  # form-data 需要字符串
     }
@@ -400,95 +422,269 @@ async def download_file(url: str, output_path: str) -> str:
         raise
 
 
-async def generate_tts_audio(text: str, output_path: str) -> str:
+async def generate_tts_audio(text: str, output_path: str, voice_id: str = "zh-CN-XiaoxiaoNeural") -> str:
     """
-    生成 TTS 语音（可选实现）
-    这里可以接入各种 TTS 服务，如：
-    - Azure TTS
-    - Google TTS
-    - OpenAI TTS
-    - 火山引擎 TTS
+    生成 TTS 语音，调用 TTS 服务
     
-    暂时返回空实现，实际项目中需要接入真实的 TTS 服务
+    Args:
+        text: 要转换的文本
+        output_path: 输出文件路径
+        voice_id: 音色 ID（默认使用中文女声）
+    
+    Returns:
+        生成的音频文件路径
     """
     logger.info(f"[视频服务] 生成 TTS 音频: {text[:50]}... -> {output_path}")
     
-    # TODO: 实际 TTS 实现
-    # 这里返回一个占位符，表示音频文件路径
-    # 实际应该调用 TTS API 生成音频
+    try:
+        # 导入 TTS 服务
+        from app.services.tts_service import generate_tts_audio as tts_generate
+        
+        # 调用 TTS 服务生成音频
+        audio_path = await tts_generate(
+            text=text,
+            output_path=output_path,
+            voice_id=voice_id,
+            rate="+0%",
+            volume="+0%",
+            max_retries=3,
+        )
+        
+        logger.info(f"[视频服务] ✅ TTS 音频生成成功: {audio_path}")
+        return audio_path
+        
+    except ImportError:
+        logger.warning("[视频服务] ⚠️ TTS 服务不可用，跳过音频生成")
+        return ""
+    except Exception as e:
+        logger.error(f"[视频服务] ❌ TTS 音频生成失败: {e}", exc_info=True)
+        return ""
+
+
+def _estimate_audio_duration(text: str, chars_per_second: float = 3.5) -> float:
+    """
+    根据文本长度估算音频时长
     
-    logger.warning("[视频服务] ⚠️ TTS 功能未实现，跳过音频生成")
-    return ""
+    Args:
+        text: 文本内容
+        chars_per_second: 每秒字符数（中文约 3-4 字/秒，英文约 2-3 词/秒）
+    
+    Returns:
+        预估的音频时长（秒）
+    """
+    if not text:
+        return 0.0
+    # 简单估算：文本长度 / 每秒字符数
+    estimated = len(text.strip()) / chars_per_second
+    # 添加最小时长（避免过短）
+    return max(estimated, 1.0)
+
+
+def _choose_video_duration(estimated_audio_duration: float) -> int:
+    """
+    根据预估音频时长选择合适的视频时长
+    
+    Args:
+        estimated_audio_duration: 预估的音频时长（秒）
+    
+    Returns:
+        视频时长（5 / 10 / 15 秒）
+    """
+    # 规则：
+    # - 预估音频 <= 5 秒：使用 5 秒视频
+    # - 5 秒 < 预估音频 <= 10 秒：使用 10 秒视频
+    # - 预估音频 > 10 秒：使用 15 秒视频（需要 4.0 模型）
+    if estimated_audio_duration <= 5:
+        return 5
+    elif estimated_audio_duration <= 10:
+        return 10
+    else:
+        return LONG_VIDEO_MAX_DURATION
+
+
+def _adjust_video_to_audio(video_clip, audio_duration: float):
+    """
+    调整视频时长以匹配音频时长
+    
+    策略：
+    - 如果音频时长 <= 视频时长：视频慢放到音频时长
+    - 如果音频时长 > 视频时长：视频循环播放，最后一段慢放到剩余时长
+    
+    Args:
+        video_clip: VideoFileClip 对象
+        audio_duration: 音频时长（秒）
+    
+    Returns:
+        调整后的视频片段
+    """
+    from moviepy import VideoFileClip, concatenate_videoclips
+    from moviepy.video.fx import speedx
+    
+    video_duration = video_clip.duration
+    
+    if audio_duration <= video_duration:
+        # 音频更短：视频慢放到音频时长
+        speed_factor = video_duration / audio_duration
+        # 限制慢放速度，避免过慢（最快 0.3x）
+        speed_factor = max(0.3, min(speed_factor, 2.0))
+        adjusted = video_clip.fx(speedx, speed_factor).subclip(0, audio_duration)
+        logger.debug(f"[视频服务] 视频慢放: {video_duration}s -> {audio_duration}s (速度: {speed_factor:.2f}x)")
+        return adjusted
+    else:
+        # 音频更长：视频循环播放
+        loops = int(audio_duration / video_duration)
+        remainder = audio_duration % video_duration
+        
+        clips = []
+        # 添加完整循环的视频
+        for _ in range(loops):
+            clips.append(video_clip)
+        
+        # 如果有余数，添加最后一段
+        if remainder > 0.1:  # 避免过短的片段
+            if remainder < video_duration:
+                # 余数小于视频时长，需要慢放
+                speed_factor = video_duration / remainder
+                speed_factor = max(0.3, min(speed_factor, 2.0))
+                last_clip = video_clip.fx(speedx, speed_factor).subclip(0, remainder)
+            else:
+                # 余数大于视频时长（理论上不会发生，但保险起见）
+                last_clip = video_clip.subclip(0, remainder)
+            clips.append(last_clip)
+        
+        logger.debug(f"[视频服务] 视频循环: {video_duration}s 视频循环 {loops} 次 + {remainder:.2f}s")
+        return concatenate_videoclips(clips, method="compose")
 
 
 async def merge_videos_with_audio(
     video_clips: List[str],
     audio_clips: List[str],
     output_path: str,
+    sync_strategy: str = "video_adapts_audio",
 ) -> str:
     """
-    合并视频片段并添加音频
+    合并视频片段并添加音频，支持音画同步
     
     Args:
         video_clips: 视频片段文件路径列表
         audio_clips: 音频片段文件路径列表
         output_path: 输出文件路径
+        sync_strategy: 同步策略
+            - "video_adapts_audio": 视频适配音频（推荐，保证音频完整性）
+            - "audio_adapts_video": 音频适配视频（音频倍速或截断）
     
     Returns:
         合并后的视频文件路径
     """
     logger.info(f"[视频服务] 合并视频片段: {len(video_clips)} 个视频, {len(audio_clips)} 个音频")
+    logger.info(f"[视频服务] 同步策略: {sync_strategy}")
     
     try:
         # 使用 moviepy 合并视频
         from moviepy import VideoFileClip, concatenate_videoclips, AudioFileClip, CompositeAudioClip
+        from moviepy.video.fx import speedx
         
-        # 加载所有视频片段
-        clips = []
-        for i, video_path in enumerate(video_clips):
-            logger.info(f"[视频服务] 加载视频片段 {i+1}/{len(video_clips)}: {video_path}")
-            clip = VideoFileClip(video_path)
-            clips.append(clip)
+        # 加载视频和音频
+        video_objects = []
+        audio_objects = []
+        current_time = 0
         
-        # 拼接视频
-        logger.info("[视频服务] 拼接视频片段...")
-        final_video = concatenate_videoclips(clips, method="compose")
-        
-        # 添加音频（如果有）
-        if audio_clips and any(audio_clips):
-            logger.info("[视频服务] 添加音频轨道...")
-            audio_objects = []
-            current_time = 0
+        for i, (video_path, audio_path) in enumerate(zip(video_clips, audio_clips)):
+            logger.info(f"[视频服务] 处理片段 {i+1}/{len(video_clips)}: video={video_path}, audio={audio_path}")
             
-            for i, audio_path in enumerate(audio_clips):
-                if audio_path and os.path.exists(audio_path):
+            video_clip = VideoFileClip(video_path)
+            video_duration = video_clip.duration
+            
+            if audio_path and os.path.exists(audio_path):
+                try:
                     audio_clip = AudioFileClip(audio_path)
-                    audio_clip = audio_clip.set_start(current_time)
-                    audio_objects.append(audio_clip)
-                    current_time += audio_clip.duration
+                    audio_duration = audio_clip.duration
+                    
+                    logger.info(f"[视频服务] 片段 {i+1}: 视频={video_duration:.2f}s, 音频={audio_duration:.2f}s")
+                except Exception as e:
+                    logger.error(f"[视频服务] ❌ 片段 {i+1} 音频加载失败: {audio_path}, 错误: {e}")
+                    # 音频加载失败，跳过该音频
+                    audio_path = None
+                
+                # 根据策略调整
+                if sync_strategy == "video_adapts_audio":
+                    # 视频适配音频（推荐）
+                    adjusted_video = _adjust_video_to_audio(video_clip, audio_duration)
+                    adjusted_audio = audio_clip
                 else:
-                    # 如果没有音频，跳过对应的时间段
-                    current_time += clips[i].duration if i < len(clips) else 3.0
-            
-            if audio_objects:
-                final_audio = CompositeAudioClip(audio_objects)
-                final_video = final_video.set_audio(final_audio)
+                    # 音频适配视频
+                    adjusted_video = video_clip
+                    if audio_duration > video_duration:
+                        # 音频倍速（限制在合理范围）
+                        speed_factor = audio_duration / video_duration
+                        speed_factor = max(0.5, min(speed_factor, 2.0))  # 限制在 0.5x - 2.0x
+                        adjusted_audio = audio_clip.fx(speedx, speed_factor)
+                        logger.info(f"[视频服务] 音频倍速: {audio_duration:.2f}s -> {video_duration:.2f}s (速度: {speed_factor:.2f}x)")
+                    elif audio_duration < video_duration:
+                        # 音频添加静音（在末尾）
+                        from moviepy import AudioClip
+                        silence_duration = video_duration - audio_duration
+                        silence = AudioClip(lambda t: [0, 0], duration=silence_duration)
+                        adjusted_audio = CompositeAudioClip([
+                            audio_clip,
+                            silence.set_start(audio_duration)
+                        ])
+                        logger.info(f"[视频服务] 音频添加静音: {audio_duration:.2f}s + {silence_duration:.2f}s 静音")
+                    else:
+                        adjusted_audio = audio_clip
+                
+                # 设置时间轴位置
+                adjusted_video = adjusted_video.set_start(current_time)
+                adjusted_audio = adjusted_audio.set_start(current_time)
+                
+                video_objects.append(adjusted_video)
+                audio_objects.append(adjusted_audio)
+                current_time += adjusted_video.duration
+                
+            else:
+                # 无音频，直接添加视频
+                logger.info(f"[视频服务] 片段 {i+1}: 无音频，仅添加视频")
+                video_clip = video_clip.set_start(current_time)
+                video_objects.append(video_clip)
+                current_time += video_clip.duration
+        
+        # 合并视频
+        logger.info("[视频服务] 拼接视频片段...")
+        final_video = concatenate_videoclips(video_objects, method="compose")
+        
+        # 添加音频
+        if audio_objects:
+            logger.info(f"[视频服务] 添加音频轨道: 共 {len(audio_objects)} 个音频片段")
+            final_audio = CompositeAudioClip(audio_objects)
+            final_video = final_video.set_audio(final_audio)
+            logger.info("[视频服务] ✅ 音频已成功添加到视频")
+        else:
+            logger.warning("[视频服务] ⚠️ 没有可用的音频，将导出无声视频")
         
         # 导出最终视频
         logger.info(f"[视频服务] 导出最终视频: {output_path}")
-        final_video.write_videofile(
-            output_path,
-            codec="libx264",
-            audio_codec="aac",
-            fps=24,
-            preset="medium",
-            threads=4,
-        )
+        # 根据是否有音频决定是否指定音频编码
+        write_kwargs = {
+            "codec": "libx264",
+            "fps": 24,
+            "preset": "medium",
+            "threads": 4,
+        }
+        if audio_objects:
+            write_kwargs["audio_codec"] = "aac"
+            logger.info("[视频服务] 导出带音频的视频（AAC 编码）")
+        else:
+            logger.info("[视频服务] 导出无声视频（无音频编码）")
+        
+        final_video.write_videofile(output_path, **write_kwargs)
         
         # 释放资源
         final_video.close()
-        for clip in clips:
-            clip.close()
+        for v in video_objects:
+            v.close()
+        if audio_objects:
+            for a in audio_objects:
+                a.close()
         
         logger.info(f"[视频服务] ✅ 视频合并完成: {output_path}")
         return output_path
@@ -533,15 +729,24 @@ async def generate_story_video(
         temp_dir = segments_dir
         logger.info(f"[视频服务] 片段与成片目录: {temp_dir}")
 
-        # 待生成列表：(segment_index, start_url, end_url, prompt)
-        specs: List[Tuple[int, str, str, str]] = []
+        # 待生成列表：(segment_index, start_url, end_url, prompt, duration)
+        # duration 根据预估音频时长选择
+        specs: List[Tuple[int, str, str, str, int]] = []
         for i in range(len(segments) - 1):
             a, b = segments[i], segments[i + 1]
             if not a.image_url or not b.image_url:
                 logger.warning(f"[视频服务] ⚠️ 段落 {i} 或 {i+1} 缺少图片，跳过")
                 continue
             motion_prompt = f"{a.emotion} mood, {b.emotion} transition, smooth cinematic movement"
-            specs.append((i, a.image_url, b.image_url, motion_prompt))
+            
+            # 根据文本预估音频时长，选择合适的视频时长
+            estimated_duration = 5  # 默认 5 秒
+            if enable_audio and a.text:
+                estimated_audio = _estimate_audio_duration(a.text)
+                estimated_duration = _choose_video_duration(estimated_audio)
+                logger.debug(f"[视频服务] 段落 {i} 预估音频时长: {estimated_audio:.2f}s, 选择视频时长: {estimated_duration}s")
+            
+            specs.append((i, a.image_url, b.image_url, motion_prompt, estimated_duration))
 
         total = len(specs)
         if total == 0:
@@ -565,7 +770,7 @@ async def generate_story_video(
         while next_spec_index < total or pending:
             # 提交：有槽位就继续按顺序提交
             while len(pending) < MAX_CONCURRENT_VIDEO_TASKS and next_spec_index < total:
-                seg_i, start_url, end_url, prompt = specs[next_spec_index]
+                seg_i, start_url, end_url, prompt, duration = specs[next_spec_index]
                 next_spec_index += 1
                 
                 # 提交（带一次重试）
@@ -576,7 +781,7 @@ async def generate_story_video(
                             segment_index=seg_i,
                             start_image_url=start_url,
                             end_image_url=end_url,
-                            duration=5,
+                            duration=duration,  # 使用预估的时长
                             prompt=prompt,
                         )
                         if r["type"] == "url":
@@ -631,12 +836,23 @@ async def generate_story_video(
             video_clips.append(str(clip_path))
             if enable_audio and seg_i < len(segments) and segments[seg_i].text:
                 audio_path = temp_dir / f"audio_{k:03d}.mp3"
-                audio_file = await generate_tts_audio(segments[seg_i].text, str(audio_path))
+                # 使用默认音色生成音频
+                audio_file = await generate_tts_audio(
+                    text=segments[seg_i].text,
+                    output_path=str(audio_path),
+                    voice_id="zh-CN-XiaoxiaoNeural",  # 默认中文女声
+                )
+                if audio_file:
+                    logger.info(f"[视频服务] 片段 {k} 音频生成成功: {audio_file}")
+                else:
+                    logger.warning(f"[视频服务] ⚠️ 片段 {k} 音频生成失败，将跳过音频")
                 audio_clips.append(audio_file)
             else:
                 audio_clips.append("")
 
-        logger.info(f"[视频服务] ✅ 成功生成 {len(video_clips)} 个视频片段，按顺序拼接")
+        # 统计音频生成情况
+        valid_audio_count = sum(1 for a in audio_clips if a and os.path.exists(a))
+        logger.info(f"[视频服务] ✅ 成功生成 {len(video_clips)} 个视频片段，{valid_audio_count}/{len(audio_clips)} 个音频片段，按顺序拼接")
 
         task_info["status"] = VideoGenerationStatus.MERGING
         task_info["progress"] = 75
@@ -649,6 +865,7 @@ async def generate_story_video(
             video_clips=video_clips,
             audio_clips=audio_clips,
             output_path=str(output_path),
+            sync_strategy="video_adapts_audio",  # 使用视频适配音频策略
         )
 
         logger.info(f"[视频服务] ✅ 故事视频生成完成: {final_video_path}")
@@ -700,10 +917,11 @@ async def generate_video_clip_between_segments(
     
     try:
         motion_prompt = f"{current_seg.emotion} mood transition, smooth cinematic camera movement"
+        # 浏览时的过渡片段仍然保持 5 秒，使用默认模型即可
         video_url = await generate_video_clip(
             start_image_url=current_seg.image_url,
             end_image_url=next_seg.image_url,
-            duration=5,  # jimeng-video-3.5-pro 支持 5 或 10 秒
+            duration=5,
             prompt=motion_prompt,
         )
         
