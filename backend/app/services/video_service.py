@@ -517,8 +517,9 @@ def _adjust_video_to_audio(video_clip, audio_duration: float):
     Returns:
         调整后的视频片段
     """
-    from moviepy import VideoFileClip, concatenate_videoclips
-    from moviepy.video.fx import speedx
+    from moviepy.editor import VideoFileClip, concatenate_videoclips
+    from moviepy.video.fx.speedx import speedx
+
     
     video_duration = video_clip.duration
     

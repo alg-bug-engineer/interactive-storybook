@@ -176,6 +176,23 @@ async def get_segment_audio(
             voice_id=vid,
             speed=speed,
         )
+
+        # 异步预生成「下一段」音频，减少用户翻页后的等待时间
+        next_index = segment_index + 1
+        if next_index < len(state.segments):
+            next_seg = state.segments[next_index]
+            next_text = (next_seg.text or "").strip()
+            if next_text:
+                asyncio.create_task(
+                    get_or_generate_segment_audio(
+                        story_id=story_id,
+                        segment_index=next_index,
+                        text=next_text,
+                        voice_id=vid,
+                        speed=speed,
+                    )
+                )
+
         return {
             "story_id": story_id,
             "segment_index": segment_index,
