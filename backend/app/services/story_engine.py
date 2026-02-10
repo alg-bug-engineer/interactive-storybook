@@ -18,6 +18,7 @@ async def start_new_story(
 ) -> StoryState:
     """生成新故事：大纲 + 第一段配图。user_theme 为空则随机主题。
     total_pages 指定则生成固定页数；no_interaction 为 True 时不设互动节点，且后台依次生成全部插画（不等待用户翻页）。"""
+    logger.info(f"[故事引擎] 开始生成新故事，风格ID: {style_id}, 主题: {user_theme}, 页数: {total_pages}")
     outline: StoryOutline = await generate_story_outline(
         user_theme=user_theme,
         total_pages=total_pages,
@@ -40,6 +41,7 @@ async def start_new_story(
                 )
 
     # 为第一段生成图片
+    logger.info(f"[故事引擎] 使用风格 {style_id} 生成第一段图片")
     first = segments[0]
     first.image_url = await generate_story_illustration(first, outline.characters, style_id=style_id)
     segments[0] = first
@@ -56,6 +58,7 @@ async def start_new_story(
         style_id=style_id,
     )
     save_story(state)
+    logger.info(f"[故事引擎] 故事已保存，story_id: {story_id}, style_id: {state.style_id}")
 
     if len(segments) > 1:
         if no_interaction:
@@ -79,7 +82,8 @@ async def _pregenerate_image(story_id: str, segment_index: int, style_id: str | 
         return
     # 如果没有传入style_id，使用故事状态中保存的风格
     if style_id is None:
-        style_id = getattr(state, 'style_id', 'q_cute')
+        style_id = state.style_id if hasattr(state, 'style_id') else 'q_cute'
+    logger.info(f"[故事引擎] 预生成段落 {segment_index} 图片，使用风格: {style_id}")
     try:
         url = await generate_story_illustration(seg, state.characters, style_id=style_id)
         seg.image_url = url
@@ -116,7 +120,8 @@ async def go_next_segment(story_id: str) -> StoryState | None:
         return get_story(story_id)
     next_seg = state.segments[idx]
     if not next_seg.image_url:
-        style_id = getattr(state, 'style_id', 'q_cute')
+        style_id = state.style_id if hasattr(state, 'style_id') else 'q_cute'
+        logger.info(f"[故事引擎] 翻页时生成图片，段落 {idx}，使用风格: {style_id}")
         next_seg.image_url = await generate_story_illustration(next_seg, state.characters, style_id=style_id)
         state.segments[idx] = next_seg
     state.current_index = idx
@@ -209,7 +214,8 @@ async def handle_interaction(req: InteractRequest) -> ContinueResponse:
     update_story(req.story_id, segments=state.segments, current_index=state.current_index, status=state.status)
     
     # 异步生成图片（不阻塞响应）
-    style_id = getattr(state, 'style_id', 'q_cute')
+    style_id = state.style_id if hasattr(state, 'style_id') else 'q_cute'
+    logger.info(f"[故事引擎] 互动续写后异步生成图片，使用风格: {style_id}")
     asyncio.create_task(_generate_images_async(req.story_id, req.segment_index + 1, len(new_segments), state.characters, style_id=style_id))
     
     logger.info(f"[故事引擎] ✅ 互动处理完成，当前段落索引: {state.current_index}, 总段落数: {len(state.segments)}，图片后台生成中...")
@@ -233,7 +239,8 @@ async def _generate_images_async(
     
     # 如果没有传入style_id，使用故事状态中保存的风格
     if style_id is None:
-        style_id = getattr(state, 'style_id', 'q_cute')
+        style_id = state.style_id if hasattr(state, 'style_id') else 'q_cute'
+    logger.info(f"[故事引擎] 后台生成图片使用风格: {style_id}")
     
     for i in range(count):
         segment_index = start_index + i
