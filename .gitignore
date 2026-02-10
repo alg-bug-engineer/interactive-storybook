@@ -1,0 +1,42 @@
+# Dependencies
+node_modules/
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+
+# Env
+.env
+.env.local
+.env.*.local
+
+# Build / Output
+.next/
+out/
+dist/
+build/
+*.egg-info/
+.eggs/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+.DS_Store
+storybook_videos
+moviepy-master
+# Logs
+*.log
+logs/
+data
+moviepy-master.zip
+
+# Test / Coverage
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Misc
+*.db
+*.sqlite3

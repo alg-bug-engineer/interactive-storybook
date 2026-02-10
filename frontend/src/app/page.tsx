@@ -1,0 +1,300 @@
+"use client";
+
+import { useState, useEffect, useCallback } from "react";
+import { motion } from "framer-motion";
+import {
+  startStory,
+  getStory,
+  listStories,
+  fetchMe,
+  logoutApi,
+  type StoryStartResponse,
+  type StoryStateResponse,
+  type StoryGalleryItem,
+} from "@/services/api";
+import StoryScreen from "@/components/StoryScreen";
+import AuthModal from "@/components/AuthModal";
+import { useAuthStore } from "@/stores/authStore";
+
+const GALLERY_VISIBLE_INITIAL = 6;
+
+function stateToStartResponse(state: StoryStateResponse): StoryStartResponse {
+  return {
+    story_id: state.story_id,
+    title: state.title,
+    theme: state.theme,
+    characters: state.characters,
+    setting: state.setting,
+    total_segments: state.total_segments,
+    current_index: state.current_index,
+    current_segment: state.current_segment,
+    has_interaction: state.has_interaction,
+    status: state.status,
+    segments: state.segments,
+  };
+}
+
+export default function Home() {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [story, setStory] = useState<StoryStartResponse | null>(null);
+  const [themeInput, setThemeInput] = useState("");
+  const [gallery, setGallery] = useState<StoryGalleryItem[]>([]);
+  const [galleryExpanded, setGalleryExpanded] = useState(false);
+  const [loadingGallery, setLoadingGallery] = useState(false);
+  const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [authModalTab, setAuthModalTab] = useState<"login" | "register">("login");
+
+  const { token, user, setAuth, logout, loadFromStorage, setUser } = useAuthStore();
+
+  useEffect(() => {
+    loadFromStorage();
+  }, [loadFromStorage]);
+
+  useEffect(() => {
+    if (token && !user) {
+      fetchMe(token)
+        .then(setUser)
+        .catch(() => logout());
+    }
+  }, [token, user, setUser, logout]);
+
+  const loadGallery = useCallback(async () => {
+    setLoadingGallery(true);
+    try {
+      const list = await listStories();
+      setGallery(list);
+    } catch {
+      setGallery([]);
+    } finally {
+      setLoadingGallery(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadGallery();
+  }, [loadGallery]);
+
+  async function handleStartWithTheme(theme: string | null) {
+    if (!user || !token) {
+      setAuthModalOpen(true);
+      return;
+    }
+    setLoading(true);
+    setError("");
+    try {
+      const data = await startStory(theme, token);
+      setStory(data);
+      await loadGallery();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "生成故事失败，请稍后再试";
+      if (msg.includes("登录") || msg.includes("401")) {
+        logout();
+        setAuthModalOpen(true);
+      } else {
+        setError(msg);
+      }
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function handleSubmitTheme() {
+    const t = themeInput.trim();
+    handleStartWithTheme(t || null);
+  }
+
+  function handleRandomStory() {
+    setThemeInput("");
+    handleStartWithTheme(null);
+  }
+
+  async function handleLogout() {
+    if (token) await logoutApi(token).catch(() => {});
+    logout();
+  }
+
+  async function handleOpenFromGallery(storyId: string) {
+    setError("");
+    try {
+      const state = await getStory(storyId);
+      // 画廊打开时默认从第一页开始，便于浏览历史内容
+      const firstSegment = state.segments?.[0] ?? null;
+      setStory(
+        stateToStartResponse({
+          ...state,
+          current_index: 0,
+          current_segment: firstSegment,
+        })
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "加载故事失败");
+    }
+  }
+
+  if (story) {
+    return (
+      <StoryScreen
+        initialData={story}
+        onBack={() => setStory(null)}
+      />
+    );
+  }
+
+  const visibleGallery = galleryExpanded ? gallery : gallery.slice(0, GALLERY_VISIBLE_INITIAL);
+  const hasMoreGallery = gallery.length > GALLERY_VISIBLE_INITIAL;
+
+  return (
+    <main className="min-h-screen flex flex-col items-center p-6 pb-12">
+      {/* 顶部：登录/注册 或 用户信息 */}
+      <header className="absolute top-0 right-0 p-4 flex items-center gap-2">
+        {user ? (
+          <>
+            <span className="text-text-ui text-sm truncate max-w-[120px]" title={user.email}>
+              {user.email}
+            </span>
+            {user.is_paid && (
+              <span className="text-xs bg-amber-200 text-amber-900 px-2 py-0.5 rounded">付费用户</span>
+            )}
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="text-sm text-primary hover:underline"
+            >
+              退出
+            </button>
+          </>
+        ) : (
+          <>
+            <button
+              type="button"
+              onClick={() => { setAuthModalTab("login"); setAuthModalOpen(true); }}
+              className="text-sm text-primary font-medium hover:underline"
+            >
+              登录
+            </button>
+            <button
+              type="button"
+              onClick={() => { setAuthModalTab("register"); setAuthModalOpen(true); }}
+              className="text-sm text-secondary font-medium hover:underline"
+            >
+              注册
+            </button>
+          </>
+        )}
+      </header>
+
+      <AuthModal
+        open={authModalOpen}
+        onClose={() => setAuthModalOpen(false)}
+        defaultTab={authModalTab}
+      />
+
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="text-center max-w-lg w-full"
+      >
+        <h1 className="text-4xl font-bold text-primary mb-2">
+          🌟 有声互动故事书
+        </h1>
+        <p className="text-text-ui mb-6">
+          听故事、看画面、一起玩——每次都是新故事
+        </p>
+
+        {/* 主题输入框 + 向右箭头确认 */}
+        <div className="flex items-center gap-2 mb-3">
+          <input
+            type="text"
+            value={themeInput}
+            onChange={(e) => setThemeInput(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleSubmitTheme()}
+            placeholder="输入故事主题，如：龟兔赛跑、小兔子找妈妈"
+            className="flex-1 px-4 py-3 rounded-story-md border-2 border-primary/30 bg-white placeholder:text-text-ui/60 focus:border-primary focus:outline-none"
+            disabled={loading}
+          />
+          <button
+            onClick={handleSubmitTheme}
+            disabled={loading}
+            className="flex-shrink-0 w-12 h-12 rounded-story-md bg-primary text-white flex items-center justify-center hover:opacity-90 disabled:opacity-60 transition"
+            title="根据主题生成故事"
+          >
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
+            </svg>
+          </button>
+        </div>
+
+        {/* 随机一个故事 */}
+        <button
+          onClick={handleRandomStory}
+          disabled={loading}
+          className="w-full py-3 rounded-story-md border-2 border-primary/40 text-primary font-medium hover:bg-primary/10 disabled:opacity-60 transition mb-8"
+        >
+          {loading ? "正在生成故事和插画…" : "🎲 随机一个故事"}
+        </button>
+
+        {error && (
+          <p className="mb-4 text-red-600 text-sm">{error}</p>
+        )}
+      </motion.div>
+
+      {/* 画廊：生成的故事书列表 */}
+      <motion.section
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ delay: 0.2 }}
+        className="w-full max-w-4xl"
+      >
+        <h2 className="text-lg font-bold text-primary mb-3">📚 我的故事画廊</h2>
+        {loadingGallery ? (
+          <p className="text-text-ui text-sm">加载中…</p>
+        ) : gallery.length === 0 ? (
+          <p className="text-text-ui text-sm">还没有故事，去上面创建一个吧～</p>
+        ) : (
+          <>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              {visibleGallery.map((item) => (
+                <button
+                  key={item.story_id}
+                  onClick={() => handleOpenFromGallery(item.story_id)}
+                  className="rounded-story-md overflow-hidden border-2 border-primary/20 bg-white shadow hover:border-primary/50 hover:shadow-md transition text-left"
+                >
+                  <div className="aspect-[4/3] bg-bg-main flex items-center justify-center">
+                    {item.cover_url ? (
+                      <img
+                        src={item.cover_url}
+                        alt=""
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <span className="text-text-ui/60 text-sm">暂无封面</span>
+                    )}
+                  </div>
+                  <div className="p-2">
+                    <p className="font-medium text-text-story truncate text-sm" title={item.title}>
+                      {item.title}
+                    </p>
+                    {item.theme && (
+                      <p className="text-text-ui text-xs truncate" title={item.theme}>
+                        {item.theme}
+                      </p>
+                    )}
+                  </div>
+                </button>
+              ))}
+            </div>
+            {hasMoreGallery && (
+              <button
+                onClick={() => setGalleryExpanded((e) => !e)}
+                className="mt-3 text-primary font-medium text-sm hover:underline"
+              >
+                {galleryExpanded ? "收起" : `展开更多（共 ${gallery.length} 个）`}
+              </button>
+            )}
+          </>
+        )}
+      </motion.section>
+    </main>
+  );
+}

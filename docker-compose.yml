@@ -1,0 +1,25 @@
+# 有声互动故事书 - Docker 编排
+# 即梦 API 采用方案 B：开源 jimeng-api 本地服务
+
+version: "3.8"
+
+services:
+  # 即梦 API 转发服务 (iptag/jimeng-api)
+  # 使用前需在即梦官网登录获取 sessionid，见 .env.example
+  jimeng-api:
+    image: ghcr.io/iptag/jimeng-api:latest
+    container_name: interactive-storybook-jimeng
+    ports:
+      - "5100:5100"
+    restart: unless-stopped
+    # 环境变量可在 .env 中配置，sessionid 由后端通过请求头传入
+
+  # 可选：后端 API 服务（也可本地直接运行 python）
+  # backend:
+  #   build: ./backend
+  #   ports:
+  #     - "8100:8100"
+  #   env_file: .env
+  #   depends_on: []
+  #   volumes:
+  #     - ./backend:/app

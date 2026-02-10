@@ -1,0 +1,24 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --color-primary: #ff8c42;
+  --color-secondary: #6c63ff;
+  --color-accent: #ffd93d;
+  --color-success: #6bcb77;
+  --bg-main: #fff8f0;
+  --text-story: #4a3728;
+  --text-ui: #6b5b4e;
+}
+
+body {
+  background-color: var(--bg-main);
+  color: var(--text-story);
+}
+
+@layer utilities {
+  .font-story {
+    font-family: var(--font-story), "ZCOOL KuaiLe", "Comic Sans MS", cursive;
+  }
+}
