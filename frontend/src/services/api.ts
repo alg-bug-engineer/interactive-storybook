@@ -73,15 +73,17 @@ export async function upgradeToPaid(token: string): Promise<AuthUser> {
   return data.user;
 }
 
-/** 开始故事（需登录，传入 token）。theme 为空或省略则随机；total_pages 指定则生成固定页数（3–4 页无互动，5 页及以上带互动）。 */
+/** 开始故事（需登录，传入 token）。theme 为空或省略则随机；total_pages 指定则生成固定页数（3–4 页无互动，5 页及以上带互动）；style_id 指定故事风格。 */
 export async function startStory(
   theme?: string | null,
   token?: string | null,
-  totalPages?: number
+  totalPages?: number,
+  styleId?: string | null
 ): Promise<StoryStartResponse> {
-  const body: { theme?: string; total_pages?: number } = {};
+  const body: { theme?: string; total_pages?: number; style_id?: string } = {};
   if (theme) body.theme = theme;
   if (totalPages !== undefined && totalPages >= 3) body.total_pages = totalPages;
+  if (styleId) body.style_id = styleId;
   const res = await fetch(`${API}/api/story/start`, {
     method: "POST",
     headers: authHeaders(token ?? null),
@@ -89,6 +91,23 @@ export async function startStory(
   });
   if (!res.ok) throw new Error(await res.text());
   return res.json();
+}
+
+/** 故事风格定义 */
+export interface StoryStyle {
+  id: string;
+  name: string;
+  description: string;
+  suitable_for: string;
+  prompt: string;
+}
+
+/** 获取所有可用的故事风格列表 */
+export async function listStoryStyles(): Promise<StoryStyle[]> {
+  const res = await fetch(`${API}/api/story/styles`);
+  if (!res.ok) throw new Error(await res.text());
+  const data = await res.json();
+  return data.styles ?? [];
 }
 
 /** 画廊：获取所有故事摘要列表（按创建时间倒序） */
@@ -195,6 +214,7 @@ export interface StoryStartResponse {
   current_segment: StorySegmentResponse | null;
   has_interaction: boolean;
   status: string;
+  style_id?: string;
   /** 完整段落列表（从画廊打开时带上，用于直接翻页无需请求） */
   segments?: StorySegmentResponse[];
 }
@@ -220,6 +240,7 @@ export interface StoryStateResponse {
   current_segment: StorySegmentResponse | null;
   has_interaction: boolean;
   status: string;
+  style_id?: string;
 }
 
 export interface NextSegmentResponse {

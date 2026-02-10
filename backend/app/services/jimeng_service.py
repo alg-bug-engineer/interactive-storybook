@@ -13,6 +13,7 @@ import httpx
 from PIL import Image
 from app.config import get_settings
 from app.models.story import Character, StorySegment
+from app.constants.story_styles import get_style_prompt, DEFAULT_STYLE_ID
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +31,8 @@ EMOTION_MAP = {
     "tense": "dramatic shadows, stormy clouds, contrast lighting",
 }
 
-STYLE = "whimsical children's book watercolor illustration, Pixar style, cute rounded characters, storybook illustration, rich colors, detailed background, high quality, masterpiece"
+# 默认风格（向后兼容，已迁移到story_styles.py）
+DEFAULT_STYLE = "whimsical children's book watercolor illustration, Pixar style, cute rounded characters, storybook illustration, rich colors, detailed background, high quality, masterpiece"
 
 # 压缩图片配置
 COMPRESSED_IMAGES_DIR = Path("data/images")
@@ -43,10 +45,12 @@ def _build_prompt(
     scene_description: str,
     characters: List[Character],
     emotion: str,
+    style_id: str = DEFAULT_STYLE_ID,
 ) -> str:
     char_desc = ", ".join(f"{c.name}({c.appearance})" for c in characters)
     mood = EMOTION_MAP.get(emotion, EMOTION_MAP["warm"])
-    return f"{STYLE}, {scene_description}, featuring {char_desc}, {mood}"
+    style_prompt = get_style_prompt(style_id)
+    return f"{style_prompt}, {scene_description}, featuring {char_desc}, {mood}"
 
 
 async def compress_and_save_image(image_url: str) -> str:
@@ -197,13 +201,15 @@ async def generate_image(
 async def generate_story_illustration(
     segment: StorySegment,
     characters: List[Character],
+    style_id: str = DEFAULT_STYLE_ID,
 ) -> str:
     """根据故事段落生成插画（自动压缩）。"""
-    logger.info(f"[即梦API] 为段落生成插画，情感: {segment.emotion}, 场景描述: {segment.scene_description[:50]}...")
+    logger.info(f"[即梦API] 为段落生成插画，风格: {style_id}, 情感: {segment.emotion}, 场景描述: {segment.scene_description[:50]}...")
     prompt = _build_prompt(
         segment.scene_description,
         characters,
         segment.emotion,
+        style_id=style_id,
     )
     logger.debug(f"[即梦API] 完整 Prompt: {prompt}")
     # 降低分辨率从2k到1k，并启用压缩

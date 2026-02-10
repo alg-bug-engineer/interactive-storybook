@@ -52,6 +52,7 @@ class StoryState(BaseModel):
     current_index: int = 0
     status: str = "narrating"  # generating | narrating | waiting_interaction | completed
     video_clips: dict[str, str] = Field(default_factory=dict)  # {segment_index: video_url}
+    style_id: str = "q_cute"  # 故事风格ID，默认为软萌Q版卡通风
 
 
 class InteractRequest(BaseModel):

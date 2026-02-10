@@ -16,6 +16,7 @@ from app.services.story_engine import (
 )
 from app.services.tts_service import HAS_EDGE_TTS, get_or_generate_segment_audio
 from app.utils.store import list_stories
+from app.constants.story_styles import DEFAULT_STYLE_ID, get_all_styles
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +27,7 @@ class StartStoryRequest(BaseModel):
     """开始故事请求，主题与页数可选。"""
     theme: str | None = None  # 如 "龟兔赛跑"；空或省略则随机故事
     total_pages: int | None = None  # 指定则生成固定页数；3–4 页无互动，5 页及以上带互动
+    style_id: str | None = None  # 故事风格ID，如 "q_cute"、"watercolor_healing" 等
 
 
 @router.post("/start")
@@ -33,7 +35,7 @@ async def start(
     body: StartStoryRequest | None = None,
     current_user: dict = Depends(get_current_user),
 ):
-    """开始一个新故事（需登录）。可传 theme 指定主题、total_pages 指定页数。"""
+    """开始一个新故事（需登录）。可传 theme 指定主题、total_pages 指定页数、style_id 指定风格。"""
     theme = None
     if body and body.theme and isinstance(body.theme, str):
         t = body.theme.strip()
@@ -41,9 +43,12 @@ async def start(
     total_pages = getattr(body, "total_pages", None) if body else None
     if total_pages is not None and (total_pages < 3 or total_pages > 20):
         raise HTTPException(status_code=400, detail="页数至少 3 页、最多 20 页")
+    style_id = getattr(body, "style_id", None) if body else None
+    if style_id is None:
+        style_id = DEFAULT_STYLE_ID
     no_interaction = total_pages is not None and 3 <= total_pages < 5
     try:
-        state = await start_new_story(user_theme=theme, total_pages=total_pages, no_interaction=no_interaction)
+        state = await start_new_story(user_theme=theme, total_pages=total_pages, no_interaction=no_interaction, style_id=style_id)
         seg, has_interaction = get_current_segment(state)
         return {
             "story_id": state.id,
@@ -56,6 +61,7 @@ async def start(
             "current_segment": seg.model_dump() if seg else None,
             "has_interaction": has_interaction,
             "status": state.status,
+            "style_id": getattr(state, "style_id", DEFAULT_STYLE_ID),
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -65,6 +71,12 @@ async def start(
 async def list_stories_api():
     """获取所有故事摘要，用于主页画廊展示（按创建时间倒序）。"""
     return {"stories": list_stories()}
+
+
+@router.get("/styles")
+async def list_story_styles():
+    """获取所有可用的故事风格列表。"""
+    return {"styles": get_all_styles()}
 
 
 @router.get("/{story_id}")
@@ -86,6 +98,7 @@ async def get_story_state(story_id: str):
         "current_segment": seg.model_dump() if seg else None,
         "has_interaction": has_interaction,
         "status": state.status,
+        "style_id": getattr(state, "style_id", DEFAULT_STYLE_ID),
     }
 
 

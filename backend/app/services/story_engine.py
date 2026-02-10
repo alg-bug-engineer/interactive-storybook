@@ -14,6 +14,7 @@ async def start_new_story(
     user_theme: str | None = None,
     total_pages: int | None = None,
     no_interaction: bool = False,
+    style_id: str = "q_cute",
 ) -> StoryState:
     """生成新故事：大纲 + 第一段配图。user_theme 为空则随机主题。
     total_pages 指定则生成固定页数；no_interaction 为 True 时不设互动节点，且后台依次生成全部插画（不等待用户翻页）。"""
@@ -40,7 +41,7 @@ async def start_new_story(
 
     # 为第一段生成图片
     first = segments[0]
-    first.image_url = await generate_story_illustration(first, outline.characters)
+    first.image_url = await generate_story_illustration(first, outline.characters, style_id=style_id)
     segments[0] = first
 
     state = StoryState(
@@ -52,6 +53,7 @@ async def start_new_story(
         segments=segments,
         current_index=0,
         status="narrating",
+        style_id=style_id,
     )
     save_story(state)
 
@@ -59,15 +61,15 @@ async def start_new_story(
         if no_interaction:
             # 无互动模式：后台依次生成剩余全部插画，不等待用户翻页
             asyncio.create_task(
-                _generate_images_async(story_id, 1, len(segments) - 1, outline.characters)
+                _generate_images_async(story_id, 1, len(segments) - 1, outline.characters, style_id=style_id)
             )
         else:
-            asyncio.create_task(_pregenerate_image(story_id, 1))
+            asyncio.create_task(_pregenerate_image(story_id, 1, style_id=style_id))
 
     return state
 
 
-async def _pregenerate_image(story_id: str, segment_index: int) -> None:
+async def _pregenerate_image(story_id: str, segment_index: int, style_id: str | None = None) -> None:
     """后台预生成某段图片并写回 state。"""
     state = get_story(story_id)
     if not state or segment_index >= len(state.segments):
@@ -75,8 +77,11 @@ async def _pregenerate_image(story_id: str, segment_index: int) -> None:
     seg = state.segments[segment_index]
     if seg.image_url:
         return
+    # 如果没有传入style_id，使用故事状态中保存的风格
+    if style_id is None:
+        style_id = getattr(state, 'style_id', 'q_cute')
     try:
-        url = await generate_story_illustration(seg, state.characters)
+        url = await generate_story_illustration(seg, state.characters, style_id=style_id)
         seg.image_url = url
         state.segments[segment_index] = seg
         update_story(story_id, segments=state.segments)
@@ -111,7 +116,8 @@ async def go_next_segment(story_id: str) -> StoryState | None:
         return get_story(story_id)
     next_seg = state.segments[idx]
     if not next_seg.image_url:
-        next_seg.image_url = await generate_story_illustration(next_seg, state.characters)
+        style_id = getattr(state, 'style_id', 'q_cute')
+        next_seg.image_url = await generate_story_illustration(next_seg, state.characters, style_id=style_id)
         state.segments[idx] = next_seg
     state.current_index = idx
     
@@ -203,7 +209,8 @@ async def handle_interaction(req: InteractRequest) -> ContinueResponse:
     update_story(req.story_id, segments=state.segments, current_index=state.current_index, status=state.status)
     
     # 异步生成图片（不阻塞响应）
-    asyncio.create_task(_generate_images_async(req.story_id, req.segment_index + 1, len(new_segments), state.characters))
+    style_id = getattr(state, 'style_id', 'q_cute')
+    asyncio.create_task(_generate_images_async(req.story_id, req.segment_index + 1, len(new_segments), state.characters, style_id=style_id))
     
     logger.info(f"[故事引擎] ✅ 互动处理完成，当前段落索引: {state.current_index}, 总段落数: {len(state.segments)}，图片后台生成中...")
     return continuation
@@ -214,6 +221,7 @@ async def _generate_images_async(
     start_index: int,
     count: int,
     characters: List[Character],
+    style_id: str | None = None,
 ) -> None:
     """后台异步生成图片，更新到 story state。"""
     logger.info(f"[故事引擎] 后台开始生成图片: story_id={story_id}, start_index={start_index}, count={count}")
@@ -222,6 +230,10 @@ async def _generate_images_async(
     if not state:
         logger.error(f"[故事引擎] ❌ 故事不存在，无法生成图片: {story_id}")
         return
+    
+    # 如果没有传入style_id，使用故事状态中保存的风格
+    if style_id is None:
+        style_id = getattr(state, 'style_id', 'q_cute')
     
     for i in range(count):
         segment_index = start_index + i
@@ -240,7 +252,7 @@ async def _generate_images_async(
             max_retries = 2
             for retry in range(max_retries + 1):
                 try:
-                    image_url = await generate_story_illustration(seg, characters)
+                    image_url = await generate_story_illustration(seg, characters, style_id=style_id)
                     seg.image_url = image_url
                     state.segments[segment_index] = seg
                     update_story(story_id, segments=state.segments)

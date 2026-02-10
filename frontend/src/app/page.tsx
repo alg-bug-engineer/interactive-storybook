@@ -15,6 +15,7 @@ import {
 import StoryScreen from "@/components/StoryScreen";
 import AuthModal from "@/components/AuthModal";
 import VoiceSelector from "@/components/VoiceSelector";
+import StyleSelector from "@/components/StyleSelector";
 import { useAuthStore } from "@/stores/authStore";
 import { useVoiceStore } from "@/stores/voiceStore";
 
@@ -33,6 +34,7 @@ function stateToStartResponse(state: StoryStateResponse): StoryStartResponse {
     has_interaction: state.has_interaction,
     status: state.status,
     segments: state.segments,
+    style_id: state.style_id,
   };
 }
 
@@ -48,6 +50,7 @@ export default function Home() {
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [authModalTab, setAuthModalTab] = useState<"login" | "register">("login");
   const [voiceSelectorOpen, setVoiceSelectorOpen] = useState(false);
+  const [selectedStyleId, setSelectedStyleId] = useState<string | null>(null);
 
   const { token, user, setAuth, logout, loadFromStorage, setUser } = useAuthStore();
   const { loadVoices, loadPreferences, getSelectedVoice } = useVoiceStore();
@@ -108,7 +111,7 @@ export default function Home() {
     setLoading(true);
     setError("");
     try {
-      const data = await startStory(theme, token, totalPages);
+      const data = await startStory(theme, token, totalPages, selectedStyleId);
       setStory(data);
       await loadGallery();
     } catch (e) {
@@ -264,6 +267,12 @@ export default function Home() {
         <p className="text-text-ui mb-6">
           听故事、看画面、一起玩——每次都是新故事
         </p>
+
+        {/* 风格选择器 */}
+        <StyleSelector
+          selectedStyleId={selectedStyleId}
+          onSelectStyle={setSelectedStyleId}
+        />
 
         {/* 主题输入框 + 页码(可选) + 向右箭头确认 */}
         <div className="flex items-center gap-2 mb-3">
