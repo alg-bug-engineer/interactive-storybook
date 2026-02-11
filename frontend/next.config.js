@@ -1,14 +1,20 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  // 开发环境直接调用后端，无需 rewrites
-  // 如需代理，可取消注释以下配置
-  // async rewrites() {
-  //   const base = process.env.NEXT_PUBLIC_API_URL || "http://localhost:1001";
-  //   return [
-  //     { source: "/api/:path*", destination: `${base}/api/:path*` },
-  //   ];
-  // },
+  
+  // API 代理配置：将前端 /api/* 请求转发到后端
+  // 客户端请求相对路径 /api/* 会匹配这里的规则
+  async rewrites() {
+    // 服务端渲染时直接访问后端（内网可直连）
+    const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:1001";
+    
+    return [
+      {
+        source: "/api/:path*",
+        destination: `${apiBase}/api/:path*`,
+      },
+    ];
+  },
 };
 
 module.exports = nextConfig;

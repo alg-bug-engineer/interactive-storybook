@@ -1,11 +1,26 @@
-// 开发环境直接调用后端，生产环境可通过环境变量配置
-// 注意：必须使用完整 URL，不能使用相对路径，否则 Next.js 会将其当作页面路由
-const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:1001";
+// API 基础 URL 配置
+// - 开发环境: 直接访问 localhost:1001
+// - 生产环境: 使用相对路径 /api，通过 Next.js rewrites 和 Nginx 代理到后端
+const isBrowser = typeof window !== 'undefined';
 
-// 确保 API 基础 URL 是完整的
-if (!API.startsWith('http://') && !API.startsWith('https://')) {
-  console.warn('API base URL should be a full URL, defaulting to http://localhost:1001');
-}
+// 在浏览器环境且未配置自定义 API URL 时，使用相对路径
+// 这样请求会通过 Next.js rewrites -> Nginx -> 后端
+const getApiUrl = () => {
+  // 如果显式配置了 API URL，优先使用
+  if (process.env.NEXT_PUBLIC_API_URL) {
+    return process.env.NEXT_PUBLIC_API_URL;
+  }
+  
+  // 浏览器端使用相对路径（通过代理）
+  if (isBrowser) {
+    // 在生产环境或未知环境，使用空字符串表示相对路径
+    // Next.js rewrites 会处理 /api/* 请求
+    return '';
+  }
+  
+  // 服务端渲染时（开发环境）
+  return 'http://localhost:1001';
+};
 
 /** 带认证的请求头（用于需登录的接口） */
 function authHeaders(token: string | null): HeadersInit {
@@ -26,7 +41,7 @@ export async function register(
   email: string,
   password: string
 ): Promise<{ token: string; user: AuthUser }> {
-  const res = await fetch(`${API}/api/auth/register`, {
+  const res = await fetch(`${getApiUrl()}/api/auth/register`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email, password }),
@@ -39,7 +54,7 @@ export async function login(
   email: string,
   password: string
 ): Promise<{ token: string; user: AuthUser }> {
-  const res = await fetch(`${API}/api/auth/login`, {
+  const res = await fetch(`${getApiUrl()}/api/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email, password }),
@@ -49,7 +64,7 @@ export async function login(
 }
 
 export async function fetchMe(token: string): Promise<AuthUser> {
-  const res = await fetch(`${API}/api/auth/me`, {
+  const res = await fetch(`${getApiUrl()}/api/auth/me`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!res.ok) throw new Error(await res.text());
@@ -57,14 +72,14 @@ export async function fetchMe(token: string): Promise<AuthUser> {
 }
 
 export async function logoutApi(token: string): Promise<void> {
-  await fetch(`${API}/api/auth/logout`, {
+  await fetch(`${getApiUrl()}/api/auth/logout`, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}` },
   });
 }
 
 export async function upgradeToPaid(token: string): Promise<AuthUser> {
-  const res = await fetch(`${API}/api/auth/upgrade`, {
+  const res = await fetch(`${getApiUrl()}/api/auth/upgrade`, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}` },
   });
@@ -84,7 +99,7 @@ export async function startStory(
   if (theme) body.theme = theme;
   if (totalPages !== undefined && totalPages >= 3) body.total_pages = totalPages;
   if (styleId) body.style_id = styleId;
-  const res = await fetch(`${API}/api/story/start`, {
+  const res = await fetch(`${getApiUrl()}/api/story/start`, {
     method: "POST",
     headers: authHeaders(token ?? null),
     body: JSON.stringify(body),
@@ -104,7 +119,7 @@ export interface StoryStyle {
 
 /** 获取所有可用的故事风格列表 */
 export async function listStoryStyles(): Promise<StoryStyle[]> {
-  const res = await fetch(`${API}/api/story/styles`);
+  const res = await fetch(`${getApiUrl()}/api/story/styles`);
   if (!res.ok) throw new Error(await res.text());
   const data = await res.json();
   return data.styles ?? [];
@@ -120,20 +135,20 @@ export interface StoryGalleryItem {
 }
 
 export async function listStories(): Promise<StoryGalleryItem[]> {
-  const res = await fetch(`${API}/api/story/list`);
+  const res = await fetch(`${getApiUrl()}/api/story/list`);
   if (!res.ok) throw new Error(await res.text());
   const data = await res.json();
   return data.stories ?? [];
 }
 
 export async function getStory(storyId: string): Promise<StoryStateResponse> {
-  const res = await fetch(`${API}/api/story/${storyId}`);
+  const res = await fetch(`${getApiUrl()}/api/story/${storyId}`);
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }
 
 export async function nextSegment(storyId: string): Promise<NextSegmentResponse> {
-  const res = await fetch(`${API}/api/story/${storyId}/next`, { method: "POST" });
+  const res = await fetch(`${getApiUrl()}/api/story/${storyId}/next`, { method: "POST" });
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }
@@ -156,7 +171,7 @@ export async function getSegmentAudio(
   if (typeof speed === "number") params.set("speed", String(speed));
   const qs = params.toString();
   const res = await fetch(
-    `${API}/api/story/${storyId}/segment/${segmentIndex}/audio${qs ? `?${qs}` : ""}`
+    `${getApiUrl()}/api/story/${storyId}/segment/${segmentIndex}/audio${qs ? `?${qs}` : ""}`
   );
   if (!res.ok) throw new Error(await res.text());
   return res.json();
@@ -168,7 +183,7 @@ export async function submitInteraction(
   interactionType: string,
   userInput: string
 ): Promise<InteractResponse> {
-  const res = await fetch(`${API}/api/story/interact`, {
+  const res = await fetch(`${getApiUrl()}/api/story/interact`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -186,7 +201,7 @@ export async function checkSegmentImage(
   storyId: string,
   segmentIndex: number
 ): Promise<{ story_id: string; segment_index: number; image_url: string | null; has_image: boolean }> {
-  const res = await fetch(`${API}/api/story/${storyId}/segment/${segmentIndex}/image`);
+  const res = await fetch(`${getApiUrl()}/api/story/${storyId}/segment/${segmentIndex}/image`);
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }
@@ -196,7 +211,7 @@ export async function preloadSegmentImage(
   storyId: string,
   segmentIndex: number
 ): Promise<{ ok: boolean; preloading: boolean }> {
-  const res = await fetch(`${API}/api/story/${storyId}/preload-segment/${segmentIndex}`, {
+  const res = await fetch(`${getApiUrl()}/api/story/${storyId}/preload-segment/${segmentIndex}`, {
     method: "POST",
   });
   if (!res.ok) throw new Error(await res.text());
@@ -266,7 +281,7 @@ export async function generateVideo(
   storyId: string,
   enableAudio: boolean = false
 ): Promise<{ message: string; story_id: string; status: string }> {
-  const res = await fetch(`${API}/api/video/generate`, {
+  const res = await fetch(`${getApiUrl()}/api/video/generate`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -289,13 +304,13 @@ export interface VideoStatusResponse {
 }
 
 export async function getVideoStatus(storyId: string): Promise<VideoStatusResponse> {
-  const res = await fetch(`${API}/api/video/status/${storyId}`);
+  const res = await fetch(`${getApiUrl()}/api/video/status/${storyId}`);
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }
 
 export function getVideoDownloadUrl(storyId: string): string {
-  return `${API}/api/video/download/${storyId}`;
+  return `${getApiUrl()}/api/video/download/${storyId}`;
 }
 
 export async function getVideoClips(storyId: string): Promise<{
@@ -303,7 +318,7 @@ export async function getVideoClips(storyId: string): Promise<{
   video_clips: Record<string, string>;
   total_clips: number;
 }> {
-  const res = await fetch(`${API}/api/video/clips/${storyId}`);
+  const res = await fetch(`${getApiUrl()}/api/video/clips/${storyId}`);
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }
@@ -326,7 +341,7 @@ export async function listVoices(): Promise<{
   default_voice_id: string;
   tts_available: boolean;
 }> {
-  const res = await fetch(`${API}/api/voices/list`);
+  const res = await fetch(`${getApiUrl()}/api/voices/list`);
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }
@@ -335,7 +350,7 @@ export async function getRecommendedVoices(): Promise<{
   voices: Voice[];
   default_voice_id: string;
 }> {
-  const res = await fetch(`${API}/api/voices/recommended`);
+  const res = await fetch(`${getApiUrl()}/api/voices/recommended`);
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }
@@ -345,7 +360,7 @@ export async function previewVoice(voiceId: string): Promise<{
   audio_url: string;
   voice_info: Voice;
 }> {
-  const res = await fetch(`${API}/api/voices/preview/${voiceId}`);
+  const res = await fetch(`${getApiUrl()}/api/voices/preview/${voiceId}`);
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }
@@ -361,7 +376,7 @@ export async function saveVoicePreferences(
   message: string;
   preferences: any;
 }> {
-  const res = await fetch(`${API}/api/voices/preferences`, {
+  const res = await fetch(`${getApiUrl()}/api/voices/preferences`, {
     method: "POST",
     headers: authHeaders(token ?? null),
     body: JSON.stringify(preferences),
@@ -376,7 +391,7 @@ export async function getVoicePreferences(
   preferred_voice: string;
   playback_speed: number;
 }> {
-  const res = await fetch(`${API}/api/voices/preferences`, {
+  const res = await fetch(`${getApiUrl()}/api/voices/preferences`, {
     headers: authHeaders(token ?? null),
   });
   if (!res.ok) throw new Error(await res.text());
@@ -384,5 +399,5 @@ export async function getVoicePreferences(
 }
 
 export function getAudioUrl(path: string): string {
-  return `${API}/api/audio/${path}`;
+  return `${getApiUrl()}/api/audio/${path}`;
 }

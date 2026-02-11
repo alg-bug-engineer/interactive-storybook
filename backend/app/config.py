@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     # 后端（端口 1001）
     backend_host: str = "0.0.0.0"
     backend_port: int = 1001
-    api_cors_origins: str = "http://localhost:1000,http://127.0.0.1:1000"
+    api_cors_origins: str = "http://localhost:1000,http://127.0.0.1:1000,https://story.ai-knowledgepoints.cn,http://story.ai-knowledgepoints.cn"
 
     # LLM (OpenAI 兼容)
     llm_api_base: str = "https://api.openai.com/v1"
