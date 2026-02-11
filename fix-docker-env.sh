@@ -28,7 +28,7 @@ fi
 
 echo ""
 echo "[2/5] 备份当前 docker compose.yml..."
-cp docker compose.yml docker compose.yml.backup.$(date +%Y%m%d_%H%M%S)
+cp docker-compose.yml docker-compose.yml.backup.$(date +%Y%m%d_%H%M%S)
 echo "✅ 已备份"
 
 echo ""
