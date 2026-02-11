@@ -69,7 +69,8 @@ export default function VoiceSelector({ onClose, showTitle = true }: VoiceSelect
       // 获取预览音频
       const data = await previewVoice(voiceId);
       
-      // audio_url 已在 API 层解析为可直接播放的 URL（同源 /api 或显式 API base）
+      // 构造完整的音频 URL
+      // 后端返回的是相对路径如 /api/audio/...，浏览器会自动解析为同源请求
       const audioUrl = data.audio_url;
 
       // 播放音频

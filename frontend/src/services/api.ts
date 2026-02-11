@@ -5,29 +5,10 @@ const isBrowser = typeof window !== 'undefined';
 
 // 在浏览器环境且未配置自定义 API URL 时，使用相对路径
 // 这样请求会通过 Next.js rewrites -> Nginx -> 后端
-export const getApiUrl = () => {
-  const raw = process.env.NEXT_PUBLIC_API_URL?.trim();
-  // 如果显式配置了 API URL，优先使用（但避免生产环境误配到 localhost）
-  if (raw) {
-    if (isBrowser) {
-      try {
-        const u = new URL(raw, window.location.href);
-        const isLocalhost =
-          u.hostname === "localhost" ||
-          u.hostname === "127.0.0.1" ||
-          u.hostname === "0.0.0.0";
-        const isProdHost =
-          window.location.hostname !== "localhost" &&
-          window.location.hostname !== "127.0.0.1";
-        if (isProdHost && isLocalhost) {
-          // 生产域名下不应该请求用户本机的 localhost，回退为同源相对路径
-          return "";
-        }
-      } catch {
-        // ignore invalid URL and continue
-      }
-    }
-    return raw;
+const getApiUrl = () => {
+  // 如果显式配置了 API URL，优先使用
+  if (process.env.NEXT_PUBLIC_API_URL) {
+    return process.env.NEXT_PUBLIC_API_URL;
   }
   
   // 浏览器端使用相对路径（通过代理）
@@ -46,14 +27,6 @@ function authHeaders(token: string | null): HeadersInit {
   const h: HeadersInit = { "Content-Type": "application/json" };
   if (token) (h as Record<string, string>)["Authorization"] = `Bearer ${token}`;
   return h;
-}
-
-function resolvePublicUrl(pathOrUrl: string): string {
-  if (!pathOrUrl) return pathOrUrl;
-  // 后端有时返回完整 URL，直接使用
-  if (/^https?:\/\//i.test(pathOrUrl)) return pathOrUrl;
-  // 其余情况视为相对路径（通常以 /api/... 开头）
-  return `${getApiUrl()}${pathOrUrl}`;
 }
 
 // ========== 认证 API ==========
@@ -201,9 +174,7 @@ export async function getSegmentAudio(
     `${getApiUrl()}/api/story/${storyId}/segment/${segmentIndex}/audio${qs ? `?${qs}` : ""}`
   );
   if (!res.ok) throw new Error(await res.text());
-  const data = await res.json();
-  if (data?.audio_url) data.audio_url = resolvePublicUrl(data.audio_url);
-  return data;
+  return res.json();
 }
 
 export async function submitInteraction(
@@ -391,9 +362,7 @@ export async function previewVoice(voiceId: string): Promise<{
 }> {
   const res = await fetch(`${getApiUrl()}/api/voices/preview/${voiceId}`);
   if (!res.ok) throw new Error(await res.text());
-  const data = await res.json();
-  if (data?.audio_url) data.audio_url = resolvePublicUrl(data.audio_url);
-  return data;
+  return res.json();
 }
 
 export async function saveVoicePreferences(

@@ -184,12 +184,9 @@ async def generate_image(
             compressed_path = await compress_and_save_image(image_url)
             # 转换为可访问的URL路径
             if compressed_path.startswith("data/images/"):
-                # 返回静态文件URL
+                # 返回相对路径，浏览器会自动使用当前域名（开发环境/生产环境通用）
                 filename = Path(compressed_path).name
-                settings = get_settings()
-                # 假设后端运行在 localhost:1001
-                api_base = f"http://localhost:{settings.backend_port}"
-                return f"{api_base}/static/images/{filename}"
+                return f"/static/images/{filename}"
             return compressed_path
         
         return image_url

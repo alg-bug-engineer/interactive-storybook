@@ -78,7 +78,7 @@ export default function StoryScreen({ initialData, onBack }: StoryScreenProps) {
       setAudioPlayCompleted(false);
       try {
         const data = await getSegmentAudio(storyId, segmentIndex, selectedVoiceId, playbackSpeed);
-        // audio_url 已在 API 层解析为可直接播放的 URL（同源 /api 或显式 API base）
+        // 后端返回的 audio_url 是相对路径如 /api/audio/...，浏览器会自动解析为同源请求
         setSegmentAudioUrl(data.audio_url);
       } catch (e) {
         setSegmentAudioUrl(null);

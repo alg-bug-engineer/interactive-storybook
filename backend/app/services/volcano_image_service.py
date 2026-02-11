@@ -101,8 +101,6 @@ async def generate_image_volcano(
             "req_key": settings.volcano_jimeng_req_key,
             "prompt": prompt,
             "scale": 0.5,
-            "width": width,
-            "height": height,
             "force_single": True,
         }
 
@@ -160,6 +158,11 @@ async def generate_image_volcano(
                 if compress:
                     compressed_path = await compress_and_save_image(image_url)
                     logger.info(f"[火山即梦] ✅ 图片已压缩: {compressed_path}")
+                    # 转换为可访问的相对路径 URL
+                    if compressed_path.startswith("data/images/"):
+                        from pathlib import Path
+                        filename = Path(compressed_path).name
+                        return f"/static/images/{filename}"
                     return compressed_path
 
                 return image_url
