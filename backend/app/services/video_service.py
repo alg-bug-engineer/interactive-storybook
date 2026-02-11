@@ -582,7 +582,7 @@ async def merge_videos_with_audio(
     
     try:
         # 使用 moviepy 合并视频
-        from moviepy import VideoFileClip, concatenate_videoclips, AudioFileClip, CompositeAudioClip
+        from moviepy.editor import VideoFileClip, concatenate_videoclips, AudioFileClip, CompositeAudioClip
         from moviepy.video.fx import speedx
         
         # 加载视频和音频
