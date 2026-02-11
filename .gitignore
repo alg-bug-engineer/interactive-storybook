@@ -29,7 +29,7 @@ moviepy-master
 # Logs
 *.log
 logs/
-data
+data/
 moviepy-master.zip
 
 # Test / Coverage
