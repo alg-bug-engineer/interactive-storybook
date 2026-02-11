@@ -78,8 +78,8 @@ export default function StoryScreen({ initialData, onBack }: StoryScreenProps) {
       setAudioPlayCompleted(false);
       try {
         const data = await getSegmentAudio(storyId, segmentIndex, selectedVoiceId, playbackSpeed);
-        const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:1001";
-        setSegmentAudioUrl(`${API}${data.audio_url}`);
+        // audio_url 已在 API 层解析为可直接播放的 URL（同源 /api 或显式 API base）
+        setSegmentAudioUrl(data.audio_url);
       } catch (e) {
         setSegmentAudioUrl(null);
         setAudioError(e instanceof Error ? e.message : "音频生成失败");
