@@ -4,7 +4,7 @@ import logging
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from app.models.story import InteractRequest
-from app.routers.auth import get_current_user
+from app.routers.auth import get_current_user, get_current_user_optional
 from app.constants.voices import DEFAULT_VOICE_ID, is_valid_voice
 from app.services.story_engine import (
     start_new_story,
