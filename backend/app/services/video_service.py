@@ -582,7 +582,7 @@ async def merge_videos_with_audio(
     
     try:
         # 使用 moviepy 合并视频
-        from moviepy import VideoFileClip, concatenate_videoclips, AudioFileClip, CompositeAudioClip
+        from moviepy.editor import VideoFileClip, concatenate_videoclips, AudioFileClip, CompositeAudioClip
         from moviepy.video.fx import speedx
         
         # 加载视频和音频
@@ -791,7 +791,7 @@ async def generate_story_video(
                             logger.info(f"[视频服务] 片段 {seg_i} 同步返回 URL")
                         else:
                             pending[r["task_id"]] = r["segment_index"]
-                            logger.info(f"[视频服务] 片段 {seg_i} 已提交，task_id={r['task_id'][:16]}...")
+                            logger.info(f"[视频服务] 片段 {seg_i} 已提交，task_id={r['task_id'][:16]}..., 当前在途: {len(pending)}/{MAX_CONCURRENT_VIDEO_TASKS}")
                         submitted = True
                         break
                     except Exception as e:
@@ -807,19 +807,31 @@ async def generate_story_video(
             if not pending:
                 break
 
-            # 轮询所有在途任务
-            for task_id, seg_i in list(pending.items()):
-                poll_result = await poll_video_task(task_id)
+            # 并发轮询所有在途任务（使用 asyncio.gather）
+            logger.debug(f"[视频服务] 开始并发轮询 {len(pending)} 个在途任务")
+            pending_list = list(pending.items())
+            poll_tasks = [poll_video_task(task_id) for task_id, _ in pending_list]
+            poll_results = await asyncio.gather(*poll_tasks, return_exceptions=True)
+            
+            # 处理轮询结果
+            for (task_id, seg_i), poll_result in zip(pending_list, poll_results):
+                if isinstance(poll_result, Exception):
+                    logger.warning(f"[视频服务] 片段 {seg_i} 轮询异常: {poll_result}")
+                    continue
+                
                 if poll_result["status"] == "success" and poll_result.get("video_url"):
                     results[seg_i] = poll_result["video_url"]
                     del pending[task_id]
                     update_progress()
-                    logger.info(f"[视频服务] 片段 {seg_i} 轮询完成")
+                    logger.info(f"[视频服务] ✅ 片段 {seg_i} 轮询完成，剩余在途: {len(pending)}/{MAX_CONCURRENT_VIDEO_TASKS}")
                 elif poll_result["status"] == "failed":
                     del pending[task_id]
-                    logger.warning(f"[视频服务] 片段 {seg_i} 轮询失败")
+                    logger.warning(f"[视频服务] ❌ 片段 {seg_i} 生成失败")
 
-            await asyncio.sleep(POLL_INTERVAL_SECONDS)
+            # 如果还有在途任务，等待后继续轮询
+            if pending:
+                logger.debug(f"[视频服务] 等待 {POLL_INTERVAL_SECONDS} 秒后继续轮询 {len(pending)} 个任务")
+                await asyncio.sleep(POLL_INTERVAL_SECONDS)
 
         if not results:
             task_info["status"] = VideoGenerationStatus.FAILED
