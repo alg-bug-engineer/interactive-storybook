@@ -1,10 +1,10 @@
 """故事引擎：编排 LLM 生成大纲、即梦生成首图、互动续写与配图"""
 import asyncio
 import logging
-from typing import List
+from typing import List, Optional
 from app.models.story import StoryState, StoryOutline, StorySegment, InteractRequest, ContinueResponse, Character
 from app.services.llm_service import generate_story_outline, continue_story_with_interaction
-from app.services.jimeng_service import generate_story_illustration
+from app.services.image_generation_service import generate_story_image
 from app.utils.store import save_story, get_story, update_story, new_story_id
 
 logger = logging.getLogger(__name__)
@@ -15,10 +15,12 @@ async def start_new_story(
     total_pages: int | None = None,
     no_interaction: bool = False,
     style_id: str = "q_cute",
+    user: Optional[dict] = None,
 ) -> StoryState:
     """生成新故事：大纲 + 第一段配图。user_theme 为空则随机主题。
-    total_pages 指定则生成固定页数；no_interaction 为 True 时不设互动节点，且后台依次生成全部插画（不等待用户翻页）。"""
-    logger.info(f"[故事引擎] 开始生成新故事，风格ID: {style_id}, 主题: {user_theme}, 页数: {total_pages}")
+    total_pages 指定则生成固定页数；no_interaction 为 True 时不设互动节点，且后台依次生成全部插画（不等待用户翻页）。
+    user 参数用于选择服务等级（免费/付费）。"""
+    logger.info(f"[故事引擎] 开始生成新故事，风格ID: {style_id}, 主题: {user_theme}, 页数: {total_pages}, 用户: {user.get('email') if user else '未登录'}")
     outline: StoryOutline = await generate_story_outline(
         user_theme=user_theme,
         total_pages=total_pages,
@@ -43,7 +45,13 @@ async def start_new_story(
     # 为第一段生成图片
     logger.info(f"[故事引擎] 使用风格 {style_id} 生成第一段图片")
     first = segments[0]
-    first.image_url = await generate_story_illustration(first, outline.characters, style_id=style_id)
+    first.image_url = await generate_story_image(
+        scene_description=first.scene_description,
+        characters=outline.characters,
+        emotion=first.emotion,
+        style_id=style_id,
+        user=user,
+    )
     segments[0] = first
 
     state = StoryState(
@@ -65,15 +73,15 @@ async def start_new_story(
         if no_interaction:
             # 无互动模式：后台依次生成剩余全部插画，不等待用户翻页
             asyncio.create_task(
-                _generate_images_async(story_id, 1, len(segments) - 1, outline.characters, style_id=style_id)
+                _generate_images_async(story_id, 1, len(segments) - 1, outline.characters, style_id=style_id, user=user)
             )
         else:
-            asyncio.create_task(_pregenerate_image(story_id, 1, style_id=style_id))
+            asyncio.create_task(_pregenerate_image(story_id, 1, style_id=style_id, user=user))
 
     return state
 
 
-async def _pregenerate_image(story_id: str, segment_index: int, style_id: str | None = None) -> None:
+async def _pregenerate_image(story_id: str, segment_index: int, style_id: str | None = None, user: Optional[dict] = None) -> None:
     """后台预生成某段图片并写回 state。"""
     state = get_story(story_id)
     if not state or segment_index >= len(state.segments):
@@ -86,7 +94,13 @@ async def _pregenerate_image(story_id: str, segment_index: int, style_id: str | 
         style_id = state.style_id if hasattr(state, 'style_id') else 'q_cute'
     logger.info(f"[故事引擎] 预生成段落 {segment_index} 图片，使用风格: {style_id}")
     try:
-        url = await generate_story_illustration(seg, state.characters, style_id=style_id)
+        url = await generate_story_image(
+            scene_description=seg.scene_description,
+            characters=state.characters,
+            emotion=seg.emotion,
+            style_id=style_id,
+            user=user,
+        )
         seg.image_url = url
         state.segments[segment_index] = seg
         update_story(story_id, segments=state.segments)
@@ -95,9 +109,9 @@ async def _pregenerate_image(story_id: str, segment_index: int, style_id: str | 
         logger.warning(f"[故事引擎] 预生成段落 {segment_index} 图片失败: {e}")
 
 
-async def preload_segment_image(story_id: str, segment_index: int) -> None:
+async def preload_segment_image(story_id: str, segment_index: int, user: Optional[dict] = None) -> None:
     """供 API 调用的预生成接口，后台生成指定段落插画。"""
-    await _pregenerate_image(story_id, segment_index)
+    await _pregenerate_image(story_id, segment_index, user=user)
 
 
 def get_current_segment(state: StoryState) -> tuple[StorySegment | None, bool]:
@@ -109,7 +123,7 @@ def get_current_segment(state: StoryState) -> tuple[StorySegment | None, bool]:
     return seg, has_interaction
 
 
-async def go_next_segment(story_id: str) -> StoryState | None:
+async def go_next_segment(story_id: str, user: Optional[dict] = None) -> StoryState | None:
     """进入下一段；若下一段无图则同步生成。"""
     state = get_story(story_id)
     if not state:
@@ -123,7 +137,13 @@ async def go_next_segment(story_id: str) -> StoryState | None:
     if not next_seg.image_url:
         style_id = state.style_id if hasattr(state, 'style_id') else 'q_cute'
         logger.info(f"[故事引擎] 翻页时生成图片，段落 {idx}，使用风格: {style_id}")
-        next_seg.image_url = await generate_story_illustration(next_seg, state.characters, style_id=style_id)
+        next_seg.image_url = await generate_story_image(
+            scene_description=next_seg.scene_description,
+            characters=state.characters,
+            emotion=next_seg.emotion,
+            style_id=style_id,
+            user=user,
+        )
         state.segments[idx] = next_seg
     state.current_index = idx
     
@@ -139,9 +159,9 @@ async def go_next_segment(story_id: str) -> StoryState | None:
     return get_story(story_id)
 
 
-async def handle_interaction(req: InteractRequest) -> ContinueResponse:
+async def handle_interaction(req: InteractRequest, user: Optional[dict] = None) -> ContinueResponse:
     """处理用户互动：续写 + 为新段落生成图片。"""
-    logger.info(f"[故事引擎] 处理互动请求: story_id={req.story_id}, segment_index={req.segment_index}, type={req.interaction_type}, input={req.user_input[:50]}...")
+    logger.info(f"[故事引擎] 处理互动请求: story_id={req.story_id}, segment_index={req.segment_index}, type={req.interaction_type}, input={req.user_input[:50]}..., 用户: {user.get('email') if user else '未登录'}")
     
     state = get_story(req.story_id)
     if not state or req.segment_index >= len(state.segments):
@@ -219,7 +239,7 @@ async def handle_interaction(req: InteractRequest) -> ContinueResponse:
     # 异步生成图片（不阻塞响应）
     style_id = state.style_id if hasattr(state, 'style_id') else 'q_cute'
     logger.info(f"[故事引擎] 互动续写后异步生成图片，使用风格: {style_id}")
-    asyncio.create_task(_generate_images_async(req.story_id, req.segment_index + 1, len(new_segments), state.characters, style_id=style_id))
+    asyncio.create_task(_generate_images_async(req.story_id, req.segment_index + 1, len(new_segments), state.characters, style_id=style_id, user=user))
     
     logger.info(f"[故事引擎] ✅ 互动处理完成，当前段落索引: {state.current_index}, 总段落数: {len(state.segments)}，图片后台生成中...")
     return continuation
@@ -231,15 +251,16 @@ async def _generate_images_async(
     count: int,
     characters: List[Character],
     style_id: str | None = None,
+    user: Optional[dict] = None,
 ) -> None:
     """后台异步生成图片，更新到 story state。"""
-    logger.info(f"[故事引擎] 后台开始生成图片: story_id={story_id}, start_index={start_index}, count={count}")
-    
+    logger.info(f"[故事引擎] 后台开始生成图片: story_id={story_id}, start_index={start_index}, count={count}, 用户: {user.get('email') if user else '未登录'}")
+
     state = get_story(story_id)
     if not state:
         logger.error(f"[故事引擎] ❌ 故事不存在，无法生成图片: {story_id}")
         return
-    
+
     # 如果没有传入style_id，使用故事状态中保存的风格
     if style_id is None:
         style_id = state.style_id if hasattr(state, 'style_id') else 'q_cute'
@@ -262,7 +283,13 @@ async def _generate_images_async(
             max_retries = 2
             for retry in range(max_retries + 1):
                 try:
-                    image_url = await generate_story_illustration(seg, characters, style_id=style_id)
+                    image_url = await generate_story_image(
+                        scene_description=seg.scene_description,
+                        characters=characters,
+                        emotion=seg.emotion,
+                        style_id=style_id,
+                        user=user,
+                    )
                     seg.image_url = image_url
                     state.segments[segment_index] = seg
                     update_story(story_id, segments=state.segments)

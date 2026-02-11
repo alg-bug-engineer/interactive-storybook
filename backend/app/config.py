@@ -10,7 +10,7 @@ _env_file = _root_env if _root_env.exists() else ".env"
 
 
 class Settings(BaseSettings):
-    # 即梦 API (方案 B)
+    # 即梦 API (方案 B - 本地服务，免费用户使用)
     jimeng_api_base_url: str = "http://localhost:5100"
     jimeng_session_id: str = ""
     jimeng_model: str = "jimeng-4.5"
@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     llm_api_base: str = "https://api.openai.com/v1"
     llm_api_key: str = ""
     llm_model: str = "gpt-4o-mini"
-    
+
     # 视频生成
     enable_video_generation: bool = True
     video_output_dir: str = "/tmp/storybook_videos"
@@ -32,6 +32,20 @@ class Settings(BaseSettings):
     # 用户数据（本地文件存储）
     data_dir: str = "data"
     auth_secret: str = "change-me-in-production"
+
+    # 火山引擎官方 API（付费用户专享）
+    # 火山即梦官方 API
+    volcano_jimeng_ak: str = ""
+    volcano_jimeng_sk: str = ""
+    volcano_jimeng_req_key: str = "jimeng_t2i_v40"
+
+    # 火山 TTS 官方 API
+    volcano_tts_appid: str = ""
+    volcano_tts_access_token: str = ""
+    volcano_tts_cluster: str = "volcano_tts"
+    volcano_tts_endpoint: str = "wss://openspeech.bytedance.com/api/v1/tts/ws_binary"
+    volcano_tts_voice_type: str = "BV700_V2_streaming"
+    volcano_tts_encoding: str = "mp3"
 
     class Config:
         env_file = _env_file

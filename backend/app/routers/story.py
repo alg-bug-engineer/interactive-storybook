@@ -14,7 +14,8 @@ from app.services.story_engine import (
     handle_interaction,
     preload_segment_image,
 )
-from app.services.tts_service import HAS_EDGE_TTS, get_or_generate_segment_audio
+from app.services.tts_service import HAS_EDGE_TTS
+from app.services.tts_generation_service import generate_segment_tts
 from app.utils.store import list_stories
 from app.constants.story_styles import DEFAULT_STYLE_ID, get_all_styles
 
@@ -33,9 +34,10 @@ class StartStoryRequest(BaseModel):
 @router.post("/start")
 async def start(
     body: StartStoryRequest | None = None,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(get_current_user_optional),
 ):
-    """开始一个新故事（需登录）。可传 theme 指定主题、total_pages 指定页数、style_id 指定风格。"""
+    """开始一个新故事（可选登录）。可传 theme 指定主题、total_pages 指定页数、style_id 指定风格。
+    付费用户使用官方 API，免费用户和未登录用户使用本地服务。"""
     theme = None
     if body and body.theme and isinstance(body.theme, str):
         t = body.theme.strip()
@@ -48,7 +50,7 @@ async def start(
         style_id = DEFAULT_STYLE_ID
     no_interaction = total_pages is not None and 3 <= total_pages < 5
     try:
-        state = await start_new_story(user_theme=theme, total_pages=total_pages, no_interaction=no_interaction, style_id=style_id)
+        state = await start_new_story(user_theme=theme, total_pages=total_pages, no_interaction=no_interaction, style_id=style_id, user=current_user)
         seg, has_interaction = get_current_segment(state)
         return {
             "story_id": state.id,
@@ -103,7 +105,7 @@ async def get_story_state(story_id: str):
 
 
 @router.post("/{story_id}/preload-segment/{segment_index}")
-async def preload_segment(story_id: str, segment_index: int):
+async def preload_segment(story_id: str, segment_index: int, current_user: dict = Depends(get_current_user_optional)):
     """后台预生成指定段落的插画。当前页无互动时前端调用，用户翻页时可直接加载。"""
     state = get_story(story_id)
     if not state:
@@ -112,7 +114,7 @@ async def preload_segment(story_id: str, segment_index: int):
         raise HTTPException(status_code=400, detail="段落索引无效")
     if state.segments[segment_index].image_url:
         return {"ok": True, "preloading": False, "reason": "已有图片"}
-    asyncio.create_task(preload_segment_image(story_id, segment_index))
+    asyncio.create_task(preload_segment_image(story_id, segment_index, user=current_user))
     return {"ok": True, "preloading": True}
 
 
@@ -140,8 +142,10 @@ async def get_segment_audio(
     segment_index: int,
     voice_id: str | None = None,
     speed: float = 1.0,
+    current_user: dict = Depends(get_current_user_optional),
 ):
-    """获取或生成指定段落的 TTS 音频（edge-tts），用于前端朗读。"""
+    """获取或生成指定段落的 TTS 音频，用于前端朗读。
+    付费用户使用火山 TTS API，免费用户和未登录用户使用 edge-tts。"""
     if not HAS_EDGE_TTS:
         raise HTTPException(status_code=503, detail="TTS 服务不可用（edge-tts 未安装）")
 
@@ -169,12 +173,13 @@ async def get_segment_audio(
         vid = DEFAULT_VOICE_ID
 
     try:
-        audio_path = await get_or_generate_segment_audio(
+        audio_path = await generate_segment_tts(
             story_id=story_id,
             segment_index=segment_index,
             text=text,
             voice_id=vid,
             speed=speed,
+            user=current_user,
         )
 
         # 异步预生成「下一段」音频，减少用户翻页后的等待时间
@@ -184,12 +189,13 @@ async def get_segment_audio(
             next_text = (next_seg.text or "").strip()
             if next_text:
                 asyncio.create_task(
-                    get_or_generate_segment_audio(
+                    generate_segment_tts(
                         story_id=story_id,
                         segment_index=next_index,
                         text=next_text,
                         voice_id=vid,
                         speed=speed,
+                        user=current_user,
                     )
                 )
 
@@ -210,9 +216,9 @@ async def get_segment_audio(
 
 
 @router.post("/{story_id}/next")
-async def next_segment(story_id: str):
+async def next_segment(story_id: str, current_user: dict = Depends(get_current_user_optional)):
     """进入下一段，返回更新后的当前段。"""
-    state = await go_next_segment(story_id)
+    state = await go_next_segment(story_id, user=current_user)
     if not state:
         raise HTTPException(status_code=404, detail="故事不存在或已结束")
     seg, has_interaction = get_current_segment(state)
@@ -226,11 +232,11 @@ async def next_segment(story_id: str):
 
 
 @router.post("/interact")
-async def interact(req: InteractRequest):
+async def interact(req: InteractRequest, current_user: dict = Depends(get_current_user_optional)):
     """提交互动回答，返回反馈与续写段落（含图片）。"""
     logger.info(f"[API] POST /interact - story_id={req.story_id}, segment_index={req.segment_index}")
     try:
-        continuation = await handle_interaction(req)
+        continuation = await handle_interaction(req, user=current_user)
         state = get_story(req.story_id)
         if not state:
             logger.error(f"[API] ❌ 故事不存在: {req.story_id}")
