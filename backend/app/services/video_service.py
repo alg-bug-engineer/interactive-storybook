@@ -857,7 +857,7 @@ async def generate_story_video(
                 from app.constants.voices import AVAILABLE_VOICES
 
                 # 尝试常用音色的缓存文件
-                common_voices = [DEFAULT_VOICE_ID, "zh-CN-XiaoxiaoNeural", "zh-CN-YunxiNeural"]
+                common_voices = [DEFAULT_VOICE_ID, "zh-CN-XiaoxiaoNeural", "zh-CN-YunxiNeural", "zh-CN-YunjianNeural"]
                 for voice in common_voices:
                     cached_path = TTS_AUDIO_DIR / f"{story_id}_{seg_i}_{voice}.mp3"
                     if cached_path.exists() and cached_path.stat().st_size > 0:

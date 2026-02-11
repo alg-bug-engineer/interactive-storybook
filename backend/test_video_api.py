@@ -71,7 +71,7 @@ async def test_video_generation():
             f"{API_BASE}/api/video/generate",
             json={
                 "story_id": story_id,
-                "enable_audio": False,
+                # enable_audio 使用默认值 True (从缓存加载音频)
             }
         )
         

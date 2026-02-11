@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 class GenerateVideoRequest(BaseModel):
     story_id: str
-    enable_audio: bool = False  # 暂时默认关闭音频（TTS 未实现）
+    enable_audio: bool = True  # 默认开启音频（使用 TTS 缓存）
 
 
 class VideoStatusResponse(BaseModel):
