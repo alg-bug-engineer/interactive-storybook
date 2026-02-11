@@ -7,7 +7,7 @@ echo "=========================================="
 echo "修复 jimeng-api SessionID 传递问题"
 echo "=========================================="
 echo ""
-echo "问题：docker-compose.yml 没有配置环境变量传递"
+echo "问题：docker compose.yml 没有配置环境变量传递"
 echo "修复：添加 environment 配置，传递 JIMENG_SESSION_ID"
 echo ""
 
@@ -27,17 +27,17 @@ else
 fi
 
 echo ""
-echo "[2/5] 备份当前 docker-compose.yml..."
-cp docker-compose.yml docker-compose.yml.backup.$(date +%Y%m%d_%H%M%S)
+echo "[2/5] 备份当前 docker compose.yml..."
+cp docker compose.yml docker compose.yml.backup.$(date +%Y%m%d_%H%M%S)
 echo "✅ 已备份"
 
 echo ""
-echo "[3/5] 检查 docker-compose.yml 配置..."
-if grep -q "JIMENG_SESSION_ID" docker-compose.yml; then
-    echo "✅ docker-compose.yml 已包含环境变量配置"
+echo "[3/5] 检查 docker compose.yml 配置..."
+if grep -q "JIMENG_SESSION_ID" docker compose.yml; then
+    echo "✅ docker compose.yml 已包含环境变量配置"
 else
-    echo "⚠️  docker-compose.yml 缺少环境变量配置"
-    echo "需要手动更新 docker-compose.yml 文件"
+    echo "⚠️  docker compose.yml 缺少环境变量配置"
+    echo "需要手动更新 docker compose.yml 文件"
     echo "请参考 git 仓库中的最新版本，或在 jimeng-api 服务中添加："
     echo ""
     echo "    environment:"
@@ -51,8 +51,8 @@ fi
 
 echo ""
 echo "[4/5] 重启 jimeng-api 容器..."
-docker-compose down jimeng-api
-docker-compose up -d jimeng-api
+docker compose down jimeng-api
+docker compose up -d jimeng-api
 
 echo ""
 echo "[5/5] 等待服务启动（30秒）..."
@@ -77,11 +77,11 @@ else
     echo "❌ 容器中仍没有 SESSION 环境变量"
     echo ""
     echo "可能的原因："
-    echo "1. docker-compose.yml 配置不正确"
+    echo "1. docker compose.yml 配置不正确"
     echo "2. .env 文件中 SessionID 格式有问题"
     echo ""
     echo "请检查："
-    echo "  cat docker-compose.yml | grep -A5 jimeng-api"
+    echo "  cat docker compose.yml | grep -A5 jimeng-api"
     echo "  cat .env | grep JIMENG_SESSION_ID"
     exit 1
 fi
