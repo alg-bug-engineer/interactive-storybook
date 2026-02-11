@@ -55,7 +55,7 @@ docker compose down jimeng-api
 docker compose up -d jimeng-api
 
 echo ""
-echo "[5/5] 等待服务启动（30秒）..."
+echo "[5/5] 等待服务启动（10秒）..."
 for i in {30..1}; do
     echo -ne "\r剩余 $i 秒..."
     sleep 1
@@ -87,19 +87,34 @@ else
 fi
 
 echo ""
-echo "[检查 2] 服务健康状态..."
-sleep 5  # 额外等待服务完全启动
-if curl -f -s http://localhost:1002/health > /dev/null 2>&1; then
-    echo "✅ 健康检查通过"
+echo "[检查 2] Token 有效性检查（官方 API）..."
+sleep 5  # 等待服务完全启动
+TOKEN_CHECK=$(curl -s -w "\n%{http_code}" -X POST http://localhost:1002/token/check \
+    -H "Content-Type: application/json" \
+    -d "{\"token\": \"$SESSION_ID\"}" 2>&1)
+
+TOKEN_HTTP_CODE=$(echo "$TOKEN_CHECK" | tail -n 1)
+TOKEN_RESPONSE=$(echo "$TOKEN_CHECK" | head -n -1)
+
+if [ "$TOKEN_HTTP_CODE" = "200" ]; then
+    if echo "$TOKEN_RESPONSE" | grep -q '"live":true'; then
+        echo "✅ Token 有效 (live: true)"
+    else
+        echo "❌ Token 无效 (live: false)"
+        echo "请更新 SessionID："
+        echo "  bash update-sessionid.sh"
+        exit 1
+    fi
 else
-    echo "⚠️  健康检查失败（服务可能还在启动中）"
+    echo "⚠️  Token 检查失败（HTTP $TOKEN_HTTP_CODE）"
 fi
 
 echo ""
-echo "[检查 3] API 端点测试..."
+echo "[检查 3] 文生图 API 测试..."
 TEST_RESPONSE=$(curl -s -w "\n%{http_code}" -X POST http://localhost:1002/v1/images/generations \
     -H "Content-Type: application/json" \
-    -d '{"prompt":"test cat","model":"jimeng-4.5","size":"1024x1024"}' 2>&1 || echo "000")
+    -H "Authorization: Bearer $SESSION_ID" \
+    -d '{"prompt":"一只可爱的猫","model":"jimeng-4.5","ratio":"1:1","resolution":"1k"}' 2>&1 || echo "000")
 
 HTTP_CODE=$(echo "$TEST_RESPONSE" | tail -n 1)
 RESPONSE_BODY=$(echo "$TEST_RESPONSE" | head -n -1)

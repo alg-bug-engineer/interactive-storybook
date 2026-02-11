@@ -87,15 +87,29 @@ pip3 list | grep -E "httpx|socksio"
 docker exec interactive-storybook-jimeng env | grep SESSION
 # ✅ 应该看到: JIMENG_SESSION_ID=e95b8014c19d0e8db73278f5ab76a297
 
-# 3. 测试 jimeng-api 服务
-curl http://localhost:1002/health
-# ✅ 应该返回 200 OK
+# 3. 运行完整测试脚本（推荐）
+bash test-jimeng-api.sh
+# 这个脚本会测试所有 API 端点
 
-# 4. 查看后端日志
+# 4. 测试 Token 有效性（基于官方 API）
+SESSION_ID=$(grep "JIMENG_SESSION_ID=" .env | cut -d'=' -f2)
+curl -X POST http://localhost:1002/token/check \
+  -H "Content-Type: application/json" \
+  -d "{\"token\": \"$SESSION_ID\"}"
+# ✅ 应该返回: {"live":true}
+
+# 5. 测试文生图 API
+curl -X POST http://localhost:1002/v1/images/generations \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $SESSION_ID" \
+  -d '{"prompt":"一只猫","model":"jimeng-4.5","ratio":"1:1","resolution":"1k"}'
+# ✅ 应该返回包含图片 URL 的 JSON
+
+# 6. 查看后端日志
 tail -f ~/interactive-storybook/logs/backend.log
 # ✅ 应该看到成功日志，没有 502 或 SOCKS 错误
 
-# 5. 测试完整流程
+# 7. 测试完整流程
 # 访问 https://story.ai-knowledgepoints.cn
 # 点击"开始故事"，应该能成功生成带插图的故事
 ```
