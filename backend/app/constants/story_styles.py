@@ -18,42 +18,42 @@ STORY_STYLES: Dict[str, StoryStyle] = {
         "name": "软萌 Q 版卡通风",
         "description": "角色圆滚滚、大眼睛、线条圆润，色彩鲜艳柔和",
         "suitable_for": "小动物主角、低幼童话、日常温馨小故事",
-        "prompt": "soft cute Q-version cartoon style, chibi characters with big round eyes, smooth rounded lines, bright and soft colors, kawaii style, adorable and gentle, children's book illustration, high quality, masterpiece"
+        "prompt": "Q-version chibi kawaii style, super deformed characters with oversized heads and tiny bodies, extremely large sparkling round eyes, bubble-like rounded shapes, vibrant pastel gradient colors (pink, mint, lavender), glossy shiny finish, ultra cute and adorable, modern digital kawaii art, children's book illustration, high quality, masterpiece"
     },
     "watercolor_healing": {
         "id": "watercolor_healing",
         "name": "治愈水彩手绘风",
         "description": "淡彩晕染、笔触温柔、画面干净温暖",
         "suitable_for": "亲情、友情、成长类温柔小故事",
-        "prompt": "healing watercolor hand-painted style, soft color washes, gentle brushstrokes, clean and warm atmosphere, soft pastel colors, dreamy and soothing, children's book illustration, high quality, masterpiece"
+        "prompt": "delicate watercolor painting, soft flowing color washes with visible paper texture, gentle wet-on-wet technique, light transparent layers, subtle color bleeding, dreamy pastel palette (soft pink, sky blue, cream yellow), hand-painted brushstrokes, ethereal and peaceful atmosphere, children's picture book watercolor art, high quality, masterpiece"
     },
     "classic_fairy_tale": {
         "id": "classic_fairy_tale",
         "name": "经典童话绘本风",
         "description": "复古绘本质感、线条柔和、像小时候的纸质故事书",
         "suitable_for": "公主、森林、魔法、王子骑士类传统童话",
-        "prompt": "classic fairy tale picture book style, vintage picture book texture, soft lines, nostalgic paper storybook feel, traditional children's book illustration, warm and cozy, rich colors, detailed background, high quality, masterpiece"
+        "prompt": "vintage classic fairy tale illustration, traditional picture book style from 1960s-1980s, soft detailed linework with gentle shading, nostalgic warm color palette with aged paper texture, European children's book art, storybook illustration with ornate borders, detailed forest and castle backgrounds, romantic and magical atmosphere, high quality, masterpiece"
     },
     "chinese_ink_cute": {
         "id": "chinese_ink_cute",
         "name": "国风童趣水墨风",
         "description": "淡彩水墨 + 可爱化处理，不严肃、很萌",
         "suitable_for": "传统寓言、神话、中式小动物（熊猫、兔子、鲤鱼）故事",
-        "prompt": "Chinese ink painting style with cute treatment, soft ink wash colors, adorable and playful, not serious, very cute, traditional Chinese art style with modern children's book charm, gentle colors, high quality, masterpiece"
+        "prompt": "cute Chinese ink wash painting, traditional sumi-e style with playful twist, flowing black ink brushstrokes with light color accents, minimalist composition with negative space, adorable rounded animals in traditional Chinese art style, gentle ink gradients (from dark to light), rice paper texture, whimsical and cheerful, modern children's book with Chinese aesthetic, high quality, masterpiece"
     },
     "minimal_simple": {
         "id": "minimal_simple",
-        "name": "极简低幼简笔风",
-        "description": "大色块、简单线条、辨识度极高",
-        "suitable_for": "启蒙认知、短小故事、低龄宝宝",
-        "prompt": "minimalist simple line drawing style for toddlers, large color blocks, simple clean lines, highly recognizable, bold and clear shapes, educational children's book style, bright colors, high quality, masterpiece"
+        "name": "极简黑白线稿风",
+        "description": "黑白线条、简笔画风格、清晰易辨识",
+        "suitable_for": "启蒙认知、涂色书、低龄宝宝",
+        "prompt": "black and white line art, simple sketch style, monochrome line drawing, clean bold outlines without fill colors, minimalist coloring book illustration, pure line work on white background, geometric simplified shapes, high contrast black lines, very clear and recognizable forms, toddler coloring page style, no shading, no gradients, pure lineart only, high quality, masterpiece"
     },
     "clay_doll": {
         "id": "clay_doll",
         "name": "黏土/玩偶质感风",
         "description": "像手工黏土做的，立体软萌、超有亲和力",
         "suitable_for": "小动物主角、治愈系小童话",
-        "prompt": "clay and doll texture style, handmade clay appearance, three-dimensional soft and cute, super friendly and approachable, stop-motion animation feel, warm and cozy, children's book illustration, high quality, masterpiece"
+        "prompt": "3D clay sculpture style, handmade plasticine texture with finger marks, soft matte polymer clay surface, cute rounded tactile forms, stop-motion animation aesthetic, visible molding details and seams, warm studio lighting with soft shadows, Claymation character design, friendly and huggable appearance, physically crafted look, children's craft illustration style, high quality, masterpiece"
     }
 }
 

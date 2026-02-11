@@ -47,6 +47,7 @@ export default function StoryScreen({ initialData, onBack }: StoryScreenProps) {
   const [segmentAudioUrl, setSegmentAudioUrl] = useState<string | null>(null);
   const [audioLoading, setAudioLoading] = useState(false);
   const [audioError, setAudioError] = useState<string | null>(null);
+  const [audioPlayCompleted, setAudioPlayCompleted] = useState(false);
   const [allSegments] = useState<StorySegmentResponse[] | null>(() =>
     hasFullSegments(initialData) ? initialData.segments! : null
   );
@@ -63,11 +64,13 @@ export default function StoryScreen({ initialData, onBack }: StoryScreenProps) {
         setSegmentAudioUrl(null);
         setAudioError(null);
         setAudioLoading(false);
+        setAudioPlayCompleted(false);
         return;
       }
 
       setAudioLoading(true);
       setAudioError(null);
+      setAudioPlayCompleted(false);
       try {
         const data = await getSegmentAudio(storyId, segmentIndex, selectedVoiceId, playbackSpeed);
         const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8100";
@@ -75,6 +78,7 @@ export default function StoryScreen({ initialData, onBack }: StoryScreenProps) {
       } catch (e) {
         setSegmentAudioUrl(null);
         setAudioError(e instanceof Error ? e.message : "音频生成失败");
+        setAudioPlayCompleted(true); // 音频加载失败，允许显示交互
       } finally {
         setAudioLoading(false);
       }
@@ -210,7 +214,7 @@ export default function StoryScreen({ initialData, onBack }: StoryScreenProps) {
     if (!currentSegment?.text || showInteraction) return;
     fetchSegmentAudio(currentIndex, currentSegment.text);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedVoiceId, playbackSpeed]);
+  }, [selectedVoiceId]);  // 移除 playbackSpeed，倍速由 AudioPlayer 内部处理
 
   // 当前页无互动且非本地模式时，后台预生成下一页插画，翻页时直接加载
   useEffect(() => {
@@ -221,11 +225,13 @@ export default function StoryScreen({ initialData, onBack }: StoryScreenProps) {
   }, [storyId, currentIndex, totalSegments, hasInteraction, status, allSegments, loadingNext]);
 
   // 画廊浏览模式（有完整段落）不支持交互，避免改变已完成的故事内容
+  // 有交互时：音频播放完成后才显示交互选项
   const showInteraction = !!(
     hasInteraction &&
     currentSegment?.interaction_point &&
     !feedback &&
-    !allSegments  // 只有新生成的故事才支持交互
+    !allSegments &&  // 只有新生成的故事才支持交互
+    (audioPlayCompleted || !segmentAudioUrl)  // 音频播放完成或没有音频时才显示交互
   );
 
   const handleBookTap = () => {
@@ -327,9 +333,14 @@ export default function StoryScreen({ initialData, onBack }: StoryScreenProps) {
                         <TextDisplay key="text" text={currentSegment?.text ?? ""} />
                       )}
                     </AnimatePresence>
-                    {!showInteraction && status !== "completed" && !loadingNext && (
+                    {!showInteraction && status !== "completed" && !loadingNext && !hasInteraction && (
                       <p className="mt-auto pt-2 text-amber-700/70 text-sm">
                         {allSegments && currentIndex > 0 ? "← 左滑上一页 · 右滑下一页 →" : "点击或左滑下一页 →"}
+                      </p>
+                    )}
+                    {hasInteraction && !audioPlayCompleted && segmentAudioUrl && (
+                      <p className="mt-auto pt-2 text-amber-700/70 text-sm text-center">
+                        🎧 请听完故事后选择...
                       </p>
                     )}
                   </div>
@@ -373,12 +384,17 @@ export default function StoryScreen({ initialData, onBack }: StoryScreenProps) {
                     <p className="text-amber-700/70 text-sm">正在生成朗读音频…</p>
                   )}
                   {segmentAudioUrl && !audioLoading && (
-                    <AudioPlayer audioUrl={segmentAudioUrl} autoPlay className="bg-amber-50/80" />
+                    <AudioPlayer 
+                      audioUrl={segmentAudioUrl} 
+                      autoPlay 
+                      className="bg-amber-50/80"
+                      onEnded={() => setAudioPlayCompleted(true)}
+                    />
                   )}
                 </div>
               )}
-              {/* 翻页按钮：有完整段落时（画廊打开）总是显示，否则仅在未完成且无互动时显示 */}
-              {!showInteraction && (allSegments || status !== "completed") && (
+              {/* 翻页按钮：有交互时隐藏，否则正常显示 */}
+              {!showInteraction && !hasInteraction && (allSegments || status !== "completed") && (
                 <div className="flex items-center justify-between gap-2">
                   <button
                     type="button"
