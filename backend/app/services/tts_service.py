@@ -22,13 +22,17 @@ from app.constants.voices import (
 
 logger = logging.getLogger(__name__)
 
-# TTS 音频存储路径
-TTS_AUDIO_DIR = Path("backend/data/audio/tts")
+# TTS 音频存储路径（使用绝对路径，避免相对路径问题）
+_BASE_DIR = Path(__file__).parent.parent.parent  # 项目根目录
+TTS_AUDIO_DIR = _BASE_DIR / "backend" / "data" / "audio" / "tts"
 TTS_AUDIO_DIR.mkdir(parents=True, exist_ok=True)
 
 # 预览音频存储路径
-PREVIEW_AUDIO_DIR = Path("backend/data/audio/preview")
+PREVIEW_AUDIO_DIR = _BASE_DIR / "backend" / "data" / "audio" / "preview"
 PREVIEW_AUDIO_DIR.mkdir(parents=True, exist_ok=True)
+
+logger.info(f"[TTS] 音频目录: {TTS_AUDIO_DIR}")
+logger.info(f"[TTS] 预览目录: {PREVIEW_AUDIO_DIR}")
 
 
 async def generate_tts_audio(
@@ -110,7 +114,7 @@ async def generate_preview_audio(voice_id: str, force_regenerate: bool = False) 
         force_regenerate: 是否强制重新生成（默认 False，使用缓存）
     
     Returns:
-        预览音频文件路径（相对路径）
+        预览音频文件路径（相对路径，用于 API 返回）
     """
     if not HAS_EDGE_TTS:
         raise RuntimeError("edge-tts 未安装，无法生成预览音频")
@@ -126,14 +130,24 @@ async def generate_preview_audio(voice_id: str, force_regenerate: bool = False) 
     
     # 如果预览文件已存在且不强制重新生成，直接返回
     if not force_regenerate and output_path.exists() and output_path.stat().st_size > 0:
-        logger.info(f"[TTS] 预览音频已存在: {output_path}")
+        file_size_kb = output_path.stat().st_size / 1024
+        logger.info(f"[TTS] ✅ 使用缓存的预览音频: {voice_id} ({file_size_kb:.1f}KB)")
         return f"data/audio/preview/{filename}"
+    
+    logger.info(f"[TTS] 🎙️ 生成新的预览音频: {voice_id}")
     
     # 生成预览文案
     preview_text = PREVIEW_TEXT.format(voice_name=voice_info["name"])
     
     # 生成语音（带重试机制）
     await generate_tts_audio(preview_text, str(output_path), voice_id, max_retries=3)
+    
+    # 验证生成的文件
+    if output_path.exists() and output_path.stat().st_size > 0:
+        file_size_kb = output_path.stat().st_size / 1024
+        logger.info(f"[TTS] ✅ 预览音频生成成功: {voice_id} ({file_size_kb:.1f}KB)")
+    else:
+        logger.error(f"[TTS] ❌ 预览音频生成失败或文件为空: {voice_id}")
     
     return f"data/audio/preview/{filename}"
 
@@ -225,12 +239,16 @@ async def get_or_generate_segment_audio(
     """
     获取或生成段落音频（带缓存）
     
+    注意：
+    - 音频缓存基于 story_id + segment_index + voice_id
+    - 倍速不影响缓存（倍速由播放器动态调整）
+    
     Args:
         story_id: 故事 ID
         segment_index: 段落索引
         text: 段落文本
         voice_id: 音色 ID
-        speed: 播放倍速
+        speed: 播放倍速（用于生成时的 rate 参数）
     
     Returns:
         音频文件相对路径
@@ -240,11 +258,21 @@ async def get_or_generate_segment_audio(
     
     # 如果缓存存在且有效，直接返回
     if audio_path.exists() and audio_path.stat().st_size > 0:
-        logger.info(f"[TTS] 使用缓存音频: {audio_path}")
+        file_size_kb = audio_path.stat().st_size / 1024
+        logger.info(f"[TTS] ✅ 使用缓存音频: {audio_path.name} ({file_size_kb:.1f}KB)")
         return f"data/audio/tts/{audio_path.name}"
     
-    # 生成新音频
-    rate = speed_to_rate(speed)
+    logger.info(f"[TTS] 🎙️ 生成新音频: story={story_id}, segment={segment_index}, voice={voice_id}")
+    
+    # 生成新音频（使用标准倍速，播放器会动态调整）
+    rate = "+0%"  # 始终使用标准倍速生成，由播放器动态调整
     await generate_tts_audio(text, str(audio_path), voice_id, rate=rate)
+    
+    # 验证生成的文件
+    if audio_path.exists() and audio_path.stat().st_size > 0:
+        file_size_kb = audio_path.stat().st_size / 1024
+        logger.info(f"[TTS] ✅ 音频生成成功: {audio_path.name} ({file_size_kb:.1f}KB)")
+    else:
+        logger.error(f"[TTS] ❌ 音频生成失败或文件为空: {audio_path.name}")
     
     return f"data/audio/tts/{audio_path.name}"
