@@ -2,6 +2,7 @@
 import json
 import re
 import logging
+import httpx
 from openai import AsyncOpenAI
 from app.config import get_settings
 from app.models.story import (
@@ -15,6 +16,41 @@ from app.models.story import (
 from app.data.pools import pick_theme, pick_character, pick_setting
 
 logger = logging.getLogger(__name__)
+
+
+def _create_openai_client() -> AsyncOpenAI:
+    """创建 OpenAI 客户端，带超时和代理配置"""
+    settings = get_settings()
+    
+    try:
+        # 创建 httpx 客户端，配置超时和代理
+        timeout = httpx.Timeout(
+            connect=30.0,  # 连接超时
+            read=120.0,    # 读取超时（LLM 响应可能较慢）
+            write=30.0,    # 写入超时
+            pool=30.0      # 连接池超时
+        )
+        
+        # 创建自定义 httpx 客户端
+        http_client = httpx.AsyncClient(
+            timeout=timeout,
+            limits=httpx.Limits(max_keepalive_connections=5, max_connections=10),
+            follow_redirects=True,
+        )
+        
+        # 创建 OpenAI 客户端
+        client = AsyncOpenAI(
+            base_url=settings.llm_api_base.rstrip("/"),
+            api_key=settings.llm_api_key,
+            http_client=http_client,
+        )
+        
+        logger.info("[LLM] ✅ OpenAI 客户端初始化成功")
+        return client
+    except Exception as e:
+        logger.error(f"[LLM] ❌ 创建 OpenAI 客户端失败: {e}", exc_info=True)
+        raise
+
 
 OUTLINE_SYSTEM = """你是一个专业的儿童故事创作家，专门为3-10岁小朋友创作温暖、有趣、富有教育意义的原创童话故事。
 
@@ -339,29 +375,33 @@ async def generate_story_outline(
         user_content += f"\n**篇幅要求（必须严格遵守）**：请生成恰好 {total_pages} 页（段），segments 数组长度必须为 {total_pages}。"
     if no_interaction:
         user_content += "\n**不要任何互动节点**：所有段落的 interaction_point 必须为 null，这是一个纯叙述故事。"
-    settings = get_settings()
-    client = AsyncOpenAI(
-        base_url=settings.llm_api_base.rstrip("/"),
-        api_key=settings.llm_api_key,
-    )
-    resp = await client.chat.completions.create(
-        model=settings.llm_model,
-        messages=[
-            {"role": "system", "content": OUTLINE_SYSTEM},
-            {"role": "user", "content": user_content},
-        ],
-        temperature=0.8,
-    )
-    raw = resp.choices[0].message.content or "{}"
-    logger.debug(f"[LLM] 原始响应 (前200字符): {raw[:200]}...")
     
-    raw = _normalize_json(raw)
-    logger.debug(f"[LLM] 清洗后 (前200字符): {raw[:200]}...")
-    
-    data = _parse_json_with_retry(raw)
-    logger.info(f"[LLM] ✅ JSON 解析成功")
-    
-    return _parse_outline(data)
+    client = _create_openai_client()
+    try:
+        resp = await client.chat.completions.create(
+            model=get_settings().llm_model,
+            messages=[
+                {"role": "system", "content": OUTLINE_SYSTEM},
+                {"role": "user", "content": user_content},
+            ],
+            temperature=0.8,
+        )
+        raw = resp.choices[0].message.content or "{}"
+        logger.debug(f"[LLM] 原始响应 (前200字符): {raw[:200]}...")
+        
+        raw = _normalize_json(raw)
+        logger.debug(f"[LLM] 清洗后 (前200字符): {raw[:200]}...")
+        
+        data = _parse_json_with_retry(raw)
+        logger.info(f"[LLM] ✅ JSON 解析成功")
+        
+        return _parse_outline(data)
+    finally:
+        # 确保客户端正确关闭，避免资源泄漏
+        try:
+            await client.close()
+        except Exception as e:
+            logger.warning(f"[LLM] 关闭客户端时出错（可忽略）: {e}")
 
 
 CONTINUE_SYSTEM = """你正在为一个小朋友续写互动童话故事。请只输出一个 JSON 对象，不要 markdown 代码块，不要其他文字。
@@ -529,26 +569,30 @@ async def continue_story_with_interaction(
 {progress_hint}
 请先写一句热情鼓励的反馈（可提及孩子的回答），再续写1-2个段落。
 **重要**：续写内容必须明确体现「孩子的回答」——例如孩子起的名字要在后文用来称呼角色，孩子的选择要成为后续情节（如选了去哪里、做了什么），让孩子明显感到自己的参与改变了故事。保持风格一致。只输出 JSON。"""
-    settings = get_settings()
-    client = AsyncOpenAI(
-        base_url=settings.llm_api_base.rstrip("/"),
-        api_key=settings.llm_api_key,
-    )
-    resp = await client.chat.completions.create(
-        model=settings.llm_model,
-        messages=[
-            {"role": "system", "content": CONTINUE_SYSTEM},
-            {"role": "user", "content": user_content},
-        ],
-        temperature=0.7,
-    )
-    raw = resp.choices[0].message.content or "{}"
-    logger.debug(f"[LLM] 续写原始响应 (前200字符): {raw[:200]}...")
     
-    raw = _normalize_json(raw)
-    logger.debug(f"[LLM] 续写清洗后 (前200字符): {raw[:200]}...")
-    
-    data = _parse_json_with_retry(raw)
-    logger.info(f"[LLM] ✅ 续写 JSON 解析成功")
-    
-    return _parse_continue(data)
+    client = _create_openai_client()
+    try:
+        resp = await client.chat.completions.create(
+            model=get_settings().llm_model,
+            messages=[
+                {"role": "system", "content": CONTINUE_SYSTEM},
+                {"role": "user", "content": user_content},
+            ],
+            temperature=0.7,
+        )
+        raw = resp.choices[0].message.content or "{}"
+        logger.debug(f"[LLM] 续写原始响应 (前200字符): {raw[:200]}...")
+        
+        raw = _normalize_json(raw)
+        logger.debug(f"[LLM] 续写清洗后 (前200字符): {raw[:200]}...")
+        
+        data = _parse_json_with_retry(raw)
+        logger.info(f"[LLM] ✅ 续写 JSON 解析成功")
+        
+        return _parse_continue(data)
+    finally:
+        # 确保客户端正确关闭，避免资源泄漏
+        try:
+            await client.close()
+        except Exception as e:
+            logger.warning(f"[LLM] 关闭客户端时出错（可忽略）: {e}")
