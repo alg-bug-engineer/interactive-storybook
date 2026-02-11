@@ -53,6 +53,7 @@ class StoryState(BaseModel):
     status: str = "narrating"  # generating | narrating | waiting_interaction | completed
     video_clips: dict[str, str] = Field(default_factory=dict)  # {segment_index: video_url}
     style_id: str = "q_cute"  # 故事风格ID，默认为软萌Q版卡通风
+    max_total_pages: int = 7  # 用户设定的最大总页数（包括互动续写的页数），默认7页
 
 
 class InteractRequest(BaseModel):

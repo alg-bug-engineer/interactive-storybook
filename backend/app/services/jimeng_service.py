@@ -47,7 +47,14 @@ def _build_prompt(
     emotion: str,
     style_id: str = DEFAULT_STYLE_ID,
 ) -> str:
+    # 构建角色描述
     char_desc = ", ".join(f"{c.name}({c.appearance})" for c in characters)
+    
+    # 多角色场景优化：当有2个或更多角色时，明确强调多角色互动
+    if len(characters) >= 2:
+        multi_char_emphasis = "multiple characters interacting together in the same scene, all characters visible and engaged"
+        char_desc = f"{char_desc}, {multi_char_emphasis}"
+    
     mood = EMOTION_MAP.get(emotion, EMOTION_MAP["warm"])
     style_prompt = get_style_prompt(style_id)
     return f"{style_prompt}, {scene_description}, featuring {char_desc}, {mood}"

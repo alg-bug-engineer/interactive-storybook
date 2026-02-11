@@ -29,11 +29,17 @@ export default function AudioPlayer({
   const { playbackSpeed, setPlaybackSpeed } = useVoiceStore();
   
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const onEndedRef = useRef(onEnded);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [showSpeedMenu, setShowSpeedMenu] = useState(false);
+
+  // 保持 onEnded 回调的最新引用
+  useEffect(() => {
+    onEndedRef.current = onEnded;
+  }, [onEnded]);
 
   // 初始化音频
   useEffect(() => {
@@ -56,7 +62,7 @@ export default function AudioPlayer({
     audio.onpause = () => setIsPlaying(false);
     audio.onended = () => {
       setIsPlaying(false);
-      if (onEnded) onEnded();
+      if (onEndedRef.current) onEndedRef.current();
     };
 
     audio.onerror = () => {
@@ -71,7 +77,7 @@ export default function AudioPlayer({
       audio.pause();
       audio.src = "";
     };
-  }, [audioUrl, autoPlay, onEnded, playbackSpeed]);
+  }, [audioUrl, autoPlay, playbackSpeed]);
 
   // 更新播放速度
   useEffect(() => {

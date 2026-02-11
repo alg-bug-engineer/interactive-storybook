@@ -56,6 +56,11 @@ export default function StoryScreen({ initialData, onBack }: StoryScreenProps) {
 
   const { selectedVoiceId, playbackSpeed, ttsAvailable } = useVoiceStore();
 
+  // 使用 useCallback 稳定 onEnded 回调引用，避免 AudioPlayer 重复渲染
+  const handleAudioEnded = useCallback(() => {
+    setAudioPlayCompleted(true);
+  }, []);
+
   const fetchSegmentAudio = useCallback(
     async (segmentIndex: number, text?: string | null) => {
       // 无文本或 TTS 不可用时不请求
@@ -209,6 +214,42 @@ export default function StoryScreen({ initialData, onBack }: StoryScreenProps) {
     return () => {};
   }, []);
 
+  // 键盘方向键支持：左右翻页
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // 如果正在加载、或正在翻页，不响应键盘
+      if (loadingNext || loadingInteract || isFlipping) return;
+      
+      // 检查是否有交互显示（根据原始状态计算，避免依赖 showInteraction）
+      const hasInteractionVisible = !!(
+        hasInteraction &&
+        currentSegment?.interaction_point &&
+        !feedback &&
+        !allSegments &&
+        (audioPlayCompleted || !segmentAudioUrl)
+      );
+      
+      if (hasInteractionVisible) return;
+      
+      if (e.key === "ArrowRight") {
+        // 右方向键：下一页
+        e.preventDefault();
+        if (status !== "completed" || allSegments) {
+          goNext();
+        }
+      } else if (e.key === "ArrowLeft") {
+        // 左方向键：上一页（仅在画廊模式可用）
+        e.preventDefault();
+        if (allSegments && currentIndex > 0) {
+          goPrev();
+        }
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [loadingNext, loadingInteract, isFlipping, hasInteraction, currentSegment, feedback, allSegments, audioPlayCompleted, segmentAudioUrl, status, currentIndex, goNext, goPrev]);
+
   // 关键：当用户切换音色/倍速时，让“当前页”的朗读也立刻生效（重新拉取对应音频）
   useEffect(() => {
     if (!currentSegment?.text || showInteraction) return;
@@ -223,6 +264,21 @@ export default function StoryScreen({ initialData, onBack }: StoryScreenProps) {
     if (nextIdx >= totalSegments) return;
     preloadSegmentImage(storyId, nextIdx).catch(() => {});
   }, [storyId, currentIndex, totalSegments, hasInteraction, status, allSegments, loadingNext]);
+
+  // 音频播放完成后自动翻页：当 audioPlayCompleted 变为 true 时，延迟后自动翻页
+  useEffect(() => {
+    if (!audioPlayCompleted) return;
+    
+    // 如果有互动节点、故事已完成、正在加载，则不自动翻页
+    if (hasInteraction || status === "completed" || loadingNext || loadingInteract) return;
+    
+    // 延迟 1.5 秒让用户有时间看完当前内容，然后自动翻页
+    const timer = setTimeout(() => {
+      goNext();
+    }, 1500);
+    
+    return () => clearTimeout(timer);
+  }, [audioPlayCompleted, hasInteraction, status, loadingNext, loadingInteract, goNext]);
 
   // 画廊浏览模式（有完整段落）不支持交互，避免改变已完成的故事内容
   // 有交互时：音频播放完成后才显示交互选项
@@ -269,25 +325,71 @@ export default function StoryScreen({ initialData, onBack }: StoryScreenProps) {
         />
       </header>
 
-      {/* 书籍主体：左图右文，点击/左滑翻页 */}
+      {/* 书籍主体：左图右文，点击/左滑翻页 - 仿真书本效果 */}
       <section
         className="flex-1 flex min-h-0 p-3 md:p-6"
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
       >
-        <div className="flex-1 flex max-w-5xl mx-auto w-full rounded-2xl overflow-hidden shadow-2xl border border-amber-200 bg-amber-50/90 min-h-[320px]">
-          {/* 左页：插画 */}
-          <div className="w-1/2 min-w-0 flex flex-col border-r-2 border-amber-200/80 rounded-l-2xl overflow-hidden bg-gradient-to-br from-amber-100/50 to-orange-100/30">
-            <div className="flex-1 min-h-[200px] flex items-center justify-center p-2">
+        <div 
+          className="flex-1 flex max-w-5xl mx-auto w-full rounded-2xl overflow-hidden min-h-[320px] relative"
+          style={{
+            boxShadow: '0 20px 60px rgba(0,0,0,0.3), inset 0 0 0 1px rgba(255,255,255,0.5)',
+            background: 'linear-gradient(90deg, #f5e6d3 0%, #faf5ef 2%, #fefcf8 48%, #faf5ef 98%, #f5e6d3 100%)',
+          }}
+        >
+          {/* 左页：插画 - 书页左侧 */}
+          <div 
+            className="w-1/2 min-w-0 flex flex-col rounded-l-2xl overflow-hidden relative"
+            style={{
+              background: 'linear-gradient(to right, #f8f3ed 0%, #fffdf9 100%)',
+              boxShadow: 'inset -5px 0 15px -5px rgba(139,69,19,0.1)',
+            }}
+          >
+            {/* 书页纹理 */}
+            <div 
+              className="absolute inset-0 opacity-[0.03] pointer-events-none"
+              style={{
+                backgroundImage: 'repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(139,69,19,0.1) 2px, rgba(139,69,19,0.1) 4px)',
+              }}
+            />
+            <div className="flex-1 min-h-[200px] flex items-center justify-center p-3 relative z-10">
               <ImageDisplay imageUrl={currentSegment?.image_url} />
             </div>
+            {/* 书脊阴影 */}
+            <div 
+              className="absolute top-0 right-0 w-1 h-full"
+              style={{
+                background: 'linear-gradient(to left, rgba(139,69,19,0.15), transparent)',
+              }}
+            />
           </div>
 
-          {/* 右页：故事文字（带翻页效果） */}
-          <div className="w-1/2 min-w-0 flex flex-col relative rounded-r-2xl overflow-hidden bg-[#fefcf8]">
+          {/* 右页：故事文字（带真实书页翻页效果） */}
+          <div 
+            className="w-1/2 min-w-0 flex flex-col relative rounded-r-2xl overflow-hidden"
+            style={{
+              background: 'linear-gradient(to left, #f8f3ed 0%, #fffdf9 100%)',
+              boxShadow: 'inset 5px 0 15px -5px rgba(139,69,19,0.1)',
+            }}
+          >
+            {/* 书页纹理 */}
+            <div 
+              className="absolute inset-0 opacity-[0.03] pointer-events-none"
+              style={{
+                backgroundImage: 'repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(139,69,19,0.1) 2px, rgba(139,69,19,0.1) 4px)',
+              }}
+            />
+            {/* 书脊阴影 */}
+            <div 
+              className="absolute top-0 left-0 w-1 h-full"
+              style={{
+                background: 'linear-gradient(to right, rgba(139,69,19,0.15), transparent)',
+              }}
+            />
             <div
-              className="flex-1 flex flex-col p-4 cursor-pointer select-none min-h-0"
-              style={{ perspective: "1200px" }}
+              className="flex-1 flex flex-col p-4 cursor-pointer select-none min-h-0 relative z-10"
+              style={{ perspective: "1500px" }}
               onClick={handleBookTap}
             >
               <div className="flex-1 min-h-0 overflow-hidden relative" style={{ transformStyle: "preserve-3d" }}>
@@ -295,10 +397,13 @@ export default function StoryScreen({ initialData, onBack }: StoryScreenProps) {
                   className="absolute inset-0 flex flex-col"
                   animate={{ rotateY: isFlipping ? -180 : 0 }}
                   transition={{
-                    duration: isFlipping ? 0.55 : 0,
-                    ease: [0.33, 0.66, 0.33, 1],
+                    duration: isFlipping ? 0.8 : 0,
+                    ease: [0.25, 0.46, 0.45, 0.94],
                   }}
-                  style={{ transformStyle: "preserve-3d" }}
+                  style={{ 
+                    transformStyle: "preserve-3d",
+                    transformOrigin: "left center",
+                  }}
                   onAnimationComplete={() => {
                     if (!isFlipping || !nextSegmentContent) return;
                     const pending = pendingNext.current;
@@ -314,10 +419,14 @@ export default function StoryScreen({ initialData, onBack }: StoryScreenProps) {
                     setIsFlipping(false);
                   }}
                 >
-                  {/* 正面：当前段文字 */}
+                  {/* 正面：当前段文字 - 书页效果 */}
                   <div
-                    className="absolute inset-0 p-4 flex flex-col bg-[#fefcf8] overflow-y-auto"
-                    style={{ backfaceVisibility: "hidden" }}
+                    className="absolute inset-0 p-4 flex flex-col overflow-y-auto"
+                    style={{ 
+                      backfaceVisibility: "hidden",
+                      background: 'linear-gradient(to bottom, #fffef9 0%, #fefcf8 50%, #fdfbf6 100%)',
+                      boxShadow: isFlipping ? '5px 5px 20px rgba(0,0,0,0.3)' : 'none',
+                    }}
                   >
                     <AnimatePresence mode="wait">
                       {feedback ? (
@@ -334,8 +443,12 @@ export default function StoryScreen({ initialData, onBack }: StoryScreenProps) {
                       )}
                     </AnimatePresence>
                     {!showInteraction && status !== "completed" && !loadingNext && !hasInteraction && (
-                      <p className="mt-auto pt-2 text-amber-700/70 text-sm">
-                        {allSegments && currentIndex > 0 ? "← 左滑上一页 · 右滑下一页 →" : "点击或左滑下一页 →"}
+                      <p className="mt-auto pt-2 text-amber-700/70 text-sm text-center">
+                        {allSegments && currentIndex > 0 
+                          ? "← 左滑/左键上一页 · 右滑/右键下一页 →" 
+                          : segmentAudioUrl 
+                            ? "🎧 听完后自动翻页，或点击/右键/右滑下一页 →" 
+                            : "点击/右键/右滑下一页 →"}
                       </p>
                     )}
                     {hasInteraction && !audioPlayCompleted && segmentAudioUrl && (
@@ -344,12 +457,13 @@ export default function StoryScreen({ initialData, onBack }: StoryScreenProps) {
                       </p>
                     )}
                   </div>
-                  {/* 背面：下一页内容（翻页时显示） */}
+                  {/* 背面：下一页内容（翻页时显示） - 书页背面效果 */}
                   <div
-                    className="absolute inset-0 p-4 flex flex-col bg-[#fefcf8] overflow-y-auto"
+                    className="absolute inset-0 p-4 flex flex-col overflow-y-auto"
                     style={{
                       backfaceVisibility: "hidden",
                       transform: "rotateY(180deg)",
+                      background: 'linear-gradient(to bottom, #fffef9 0%, #fefcf8 50%, #fdfbf6 100%)',
                     }}
                   >
                     {nextSegmentContent ? (
@@ -362,8 +476,14 @@ export default function StoryScreen({ initialData, onBack }: StoryScreenProps) {
               </div>
             </div>
 
-            {/* 页码与互动区（不参与翻页） */}
-            <div className="border-t border-amber-200/80 p-3 bg-amber-50/50 rounded-br-2xl">
+            {/* 页码与互动区（不参与翻页） - 书页底部 */}
+            <div 
+              className="border-t p-3 rounded-br-2xl relative z-10"
+              style={{
+                borderColor: 'rgba(139,69,19,0.15)',
+                background: 'linear-gradient(to bottom, rgba(250,245,235,0.8), rgba(248,243,237,0.9))',
+              }}
+            >
               {error && <p className="text-red-600 text-sm mb-2">{error}</p>}
               <InteractionPanel
                 visible={showInteraction}
@@ -388,7 +508,7 @@ export default function StoryScreen({ initialData, onBack }: StoryScreenProps) {
                       audioUrl={segmentAudioUrl} 
                       autoPlay 
                       className="bg-amber-50/80"
-                      onEnded={() => setAudioPlayCompleted(true)}
+                      onEnded={handleAudioEnded}
                     />
                   )}
                 </div>
@@ -404,7 +524,7 @@ export default function StoryScreen({ initialData, onBack }: StoryScreenProps) {
                     }}
                     disabled={!allSegments || currentIndex <= 0 || isFlipping}
                     className="p-2 rounded-xl text-amber-700 hover:bg-amber-200/60 disabled:opacity-40 disabled:pointer-events-none"
-                    title="上一页"
+                    title="上一页 (左方向键)"
                   >
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -421,7 +541,7 @@ export default function StoryScreen({ initialData, onBack }: StoryScreenProps) {
                     }}
                     disabled={!allSegments ? (loadingNext || audioLoading) : (currentIndex >= totalSegments - 1 || isFlipping)}
                     className="p-2 rounded-xl bg-amber-600 text-white font-medium shadow hover:bg-amber-700 disabled:opacity-50"
-                    title="下一页"
+                    title="下一页 (右方向键)"
                   >
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />

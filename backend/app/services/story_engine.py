@@ -56,6 +56,7 @@ async def start_new_story(
         current_index=0,
         status="narrating",
         style_id=style_id,
+        max_total_pages=total_pages if total_pages else 7,  # 保存用户设定的页数限制
     )
     save_story(state)
     logger.info(f"[故事引擎] 故事已保存，story_id: {story_id}, style_id: {state.style_id}")
@@ -166,7 +167,8 @@ async def handle_interaction(req: InteractRequest) -> ContinueResponse:
     # 计算故事进度：已有段落数、已使用交互次数
     current_segment_count = len(state.segments)
     total_interactions_used = sum(1 for s in state.segments if s.interaction_point is not None)
-    logger.info(f"[故事引擎] 故事进度: 已有 {current_segment_count} 段，已使用 {total_interactions_used} 次交互")
+    max_pages = state.max_total_pages if hasattr(state, 'max_total_pages') else 7
+    logger.info(f"[故事引擎] 故事进度: 已有 {current_segment_count} 段，已使用 {total_interactions_used} 次交互，最大页数限制: {max_pages}")
 
     logger.info(f"[故事引擎] 调用 LLM 续写故事...")
     continuation = await continue_story_with_interaction(
@@ -176,6 +178,7 @@ async def handle_interaction(req: InteractRequest) -> ContinueResponse:
         user_input=req.user_input,
         current_segment_count=current_segment_count,
         total_interactions_used=total_interactions_used,
+        max_total_pages=max_pages,  # 传递用户设定的页数限制
     )
     logger.info(f"[故事引擎] ✅ LLM 续写完成，生成 {len(continuation.segments)} 个新段落")
 
@@ -190,11 +193,11 @@ async def handle_interaction(req: InteractRequest) -> ContinueResponse:
     
     state.segments.extend(new_segments)
     
-    # 篇幅控制：如果超过8页，截断并确保最后一段是结局（无互动）
-    MAX_SEGMENTS = 8
-    if len(state.segments) > MAX_SEGMENTS:
-        logger.warning(f"[故事引擎] 续写后段落数 {len(state.segments)} 超过 {MAX_SEGMENTS}，截断为 {MAX_SEGMENTS} 页")
-        state.segments = state.segments[:MAX_SEGMENTS]
+    # 篇幅控制：使用用户设定的max_total_pages，如果超过则截断并确保最后一段是结局（无互动）
+    max_pages = state.max_total_pages if hasattr(state, 'max_total_pages') else 7
+    if len(state.segments) > max_pages:
+        logger.warning(f"[故事引擎] 续写后段落数 {len(state.segments)} 超过用户设定的 {max_pages} 页，截断为 {max_pages} 页")
+        state.segments = state.segments[:max_pages]
         # 确保最后一段没有互动节点（结局）
         if state.segments[-1].interaction_point:
             last = state.segments[-1]

@@ -41,8 +41,8 @@ async def start(
         t = body.theme.strip()
         theme = t if t else None
     total_pages = getattr(body, "total_pages", None) if body else None
-    if total_pages is not None and (total_pages < 3 or total_pages > 20):
-        raise HTTPException(status_code=400, detail="页数至少 3 页、最多 20 页")
+    if total_pages is not None and (total_pages < 3 or total_pages > 7):
+        raise HTTPException(status_code=400, detail="页数至少 3 页、最多 7 页")
     style_id = getattr(body, "style_id", None) if body else None
     if style_id is None:
         style_id = DEFAULT_STYLE_ID

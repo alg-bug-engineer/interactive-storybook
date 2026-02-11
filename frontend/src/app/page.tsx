@@ -107,6 +107,10 @@ export default function Home() {
         alert("故事太短了，至少需要 3 页哦～");
         return;
       }
+      if (totalPages > 7) {
+        alert("故事最长 7 页哦～请输入 3-7 之间的数字");
+        return;
+      }
     }
     setLoading(true);
     setError("");
@@ -175,7 +179,12 @@ export default function Home() {
   const selectedVoice = getSelectedVoice();
 
   return (
-    <main className="min-h-screen flex flex-col items-center p-6 pb-12">
+    <main 
+      className="min-h-screen flex flex-col items-center p-6 pb-12"
+      style={{
+        background: 'linear-gradient(135deg, #8b7355 0%, #a0826d 50%, #8b7355 100%)',
+      }}
+    >
       {/* 顶部：登录/注册 或 用户信息 */}
       <header className="absolute top-0 right-0 p-4 flex items-center gap-3">
         {/* 音色选择按钮 */}
@@ -259,48 +268,100 @@ export default function Home() {
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="text-center max-w-lg w-full"
+        className="text-center max-w-lg w-full relative"
+        style={{
+          background: 'linear-gradient(135deg, #f8f3ed 0%, #fffef9 50%, #f5ebe0 100%)',
+          padding: '3rem 2.5rem',
+          borderRadius: '1rem',
+          boxShadow: '0 20px 60px rgba(0,0,0,0.4), inset 0 0 0 1px rgba(255,255,255,0.5), inset 0 0 30px rgba(139,69,19,0.1)',
+          border: '3px solid #8b7355',
+        }}
       >
-        <h1 className="text-4xl font-bold text-primary mb-2">
+        {/* 书籍装饰纹理 */}
+        <div 
+          className="absolute inset-0 opacity-[0.02] pointer-events-none rounded-lg"
+          style={{
+            backgroundImage: 'repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(139,69,19,0.3) 2px, rgba(139,69,19,0.3) 4px)',
+          }}
+        />
+        
+        {/* 书脊装饰 */}
+        <div 
+          className="absolute top-0 left-3 bottom-0 w-1 opacity-30"
+          style={{
+            background: 'linear-gradient(to bottom, #8b7355, #a0826d, #8b7355)',
+          }}
+        />
+        <div 
+          className="absolute top-0 right-3 bottom-0 w-1 opacity-30"
+          style={{
+            background: 'linear-gradient(to bottom, #8b7355, #a0826d, #8b7355)',
+          }}
+        />
+        
+        <h1 
+          className="text-4xl font-bold mb-2 relative z-10"
+          style={{
+            color: '#6b4423',
+            textShadow: '2px 2px 4px rgba(139,69,19,0.2)',
+          }}
+        >
           🌟 有声互动故事书
         </h1>
-        <p className="text-text-ui mb-6">
+        <p 
+          className="mb-6 relative z-10 text-lg"
+          style={{ color: '#8b6f47' }}
+        >
           听故事、看画面、一起玩——每次都是新故事
         </p>
 
         {/* 风格选择器 */}
-        <StyleSelector
-          selectedStyleId={selectedStyleId}
-          onSelectStyle={setSelectedStyleId}
-        />
+        <div className="relative z-10">
+          <StyleSelector
+            selectedStyleId={selectedStyleId}
+            onSelectStyle={setSelectedStyleId}
+          />
+        </div>
 
         {/* 主题输入框 + 页码(可选) + 向右箭头确认 */}
-        <div className="flex items-center gap-2 mb-3">
+        <div className="flex items-center gap-2 mb-3 relative z-10">
           <input
             type="text"
             value={themeInput}
             onChange={(e) => setThemeInput(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleSubmitTheme()}
             placeholder="输入故事主题，如：龟兔赛跑、小兔子找妈妈"
-            className="flex-1 min-w-0 px-4 py-3 rounded-story-md border-2 border-primary/30 bg-white placeholder:text-text-ui/60 focus:border-primary focus:outline-none"
+            className="flex-1 min-w-0 px-4 py-3 rounded-story-md border-2 bg-white/90 placeholder:text-text-ui/60 focus:outline-none"
+            style={{
+              borderColor: '#a0826d',
+              boxShadow: 'inset 2px 2px 5px rgba(139,69,19,0.1)',
+            }}
             disabled={loading}
           />
           <input
             type="number"
-            min={1}
-            max={20}
+            min={3}
+            max={7}
             value={pageCountInput}
             onChange={(e) => setPageCountInput(e.target.value.replace(/[^0-9]/g, ""))}
             onKeyDown={(e) => e.key === "Enter" && handleSubmitTheme()}
             placeholder="页数"
-            title="留空则随机页数；填 5 及以上为固定页数且带互动；填 3、4 为固定页数无互动"
-            className="w-14 px-2 py-3 rounded-story-md border-2 border-primary/30 bg-white placeholder:text-text-ui/60 focus:border-primary focus:outline-none text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+            title="留空则随机页数（3-7页）；填 5-7 为固定页数且带互动；填 3-4 为固定页数无互动"
+            className="w-14 px-2 py-3 rounded-story-md border-2 bg-white/90 placeholder:text-text-ui/60 focus:outline-none text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+            style={{
+              borderColor: '#a0826d',
+              boxShadow: 'inset 2px 2px 5px rgba(139,69,19,0.1)',
+            }}
             disabled={loading}
           />
           <button
             onClick={handleSubmitTheme}
             disabled={loading}
-            className="flex-shrink-0 w-12 h-12 rounded-story-md bg-primary text-white flex items-center justify-center hover:opacity-90 disabled:opacity-60 transition"
+            className="flex-shrink-0 w-12 h-12 rounded-story-md text-white flex items-center justify-center hover:opacity-90 disabled:opacity-60 transition"
+            style={{
+              background: 'linear-gradient(135deg, #8b7355 0%, #a0826d 100%)',
+              boxShadow: '0 4px 12px rgba(139,69,19,0.3)',
+            }}
             title="根据主题生成故事"
           >
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -313,28 +374,46 @@ export default function Home() {
         <button
           onClick={handleRandomStory}
           disabled={loading}
-          className="w-full py-3 rounded-story-md border-2 border-primary/40 text-primary font-medium hover:bg-primary/10 disabled:opacity-60 transition mb-8"
+          className="w-full py-3 rounded-story-md border-2 font-medium hover:opacity-90 disabled:opacity-60 transition mb-8 relative z-10"
+          style={{
+            borderColor: '#a0826d',
+            color: '#6b4423',
+            background: 'linear-gradient(to bottom, rgba(255,255,255,0.5), rgba(248,243,237,0.8))',
+            boxShadow: '0 4px 12px rgba(139,69,19,0.2), inset 0 1px 2px rgba(255,255,255,0.8)',
+          }}
         >
           {loading ? "正在生成故事和插画…" : "🎲 随机一个故事"}
         </button>
 
         {error && (
-          <p className="mb-4 text-red-600 text-sm">{error}</p>
+          <p className="mb-4 text-red-600 text-sm relative z-10 font-medium">{error}</p>
         )}
       </motion.div>
 
-      {/* 画廊：生成的故事书列表 */}
+      {/* 画廊：生成的故事书列表 - 书架效果 */}
       <motion.section
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ delay: 0.2 }}
-        className="w-full max-w-4xl"
+        className="w-full max-w-4xl mt-8 p-6 rounded-xl"
+        style={{
+          background: 'linear-gradient(to bottom, #6b5444 0%, #8b7355 50%, #6b5444 100%)',
+          boxShadow: '0 10px 40px rgba(0,0,0,0.5), inset 0 0 20px rgba(0,0,0,0.2)',
+        }}
       >
-        <h2 className="text-lg font-bold text-primary mb-3">📚 我的故事画廊</h2>
+        <h2 
+          className="text-lg font-bold mb-3"
+          style={{
+            color: '#f5ebe0',
+            textShadow: '2px 2px 4px rgba(0,0,0,0.3)',
+          }}
+        >
+          📚 我的故事画廊
+        </h2>
         {loadingGallery ? (
-          <p className="text-text-ui text-sm">加载中…</p>
+          <p className="text-sm" style={{ color: '#f5ebe0' }}>加载中…</p>
         ) : gallery.length === 0 ? (
-          <p className="text-text-ui text-sm">还没有故事，去上面创建一个吧～</p>
+          <p className="text-sm" style={{ color: '#f5ebe0' }}>还没有故事，去上面创建一个吧～</p>
         ) : (
           <>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
@@ -342,7 +421,12 @@ export default function Home() {
                 <button
                   key={item.story_id}
                   onClick={() => handleOpenFromGallery(item.story_id)}
-                  className="rounded-story-md overflow-hidden border-2 border-primary/20 bg-white shadow hover:border-primary/50 hover:shadow-md transition text-left"
+                  className="rounded-story-md overflow-hidden border-2 bg-white shadow hover:shadow-lg transition text-left transform hover:scale-105"
+                  style={{
+                    borderColor: '#a0826d',
+                    boxShadow: '0 8px 20px rgba(0,0,0,0.4)',
+                    background: 'linear-gradient(135deg, #fffef9 0%, #f8f3ed 100%)',
+                  }}
                 >
                   <div className="aspect-[4/3] bg-bg-main flex items-center justify-center">
                     {item.cover_url ? (
@@ -371,7 +455,8 @@ export default function Home() {
             {hasMoreGallery && (
               <button
                 onClick={() => setGalleryExpanded((e) => !e)}
-                className="mt-3 text-primary font-medium text-sm hover:underline"
+                className="mt-3 font-medium text-sm hover:underline"
+                style={{ color: '#f5ebe0' }}
               >
                 {galleryExpanded ? "收起" : `展开更多（共 ${gallery.length} 个）`}
               </button>

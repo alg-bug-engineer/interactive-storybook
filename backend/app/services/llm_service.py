@@ -25,7 +25,7 @@ OUTLINE_SYSTEM = """你是一个专业的儿童故事创作家，专门为3-10�
 4. **情感真挚**：故事要能打动人心，让小朋友感受到温暖、勇气、友谊等美好情感。
 
 ## 创作要求
-1. 故事篇幅：**最少 5 页（段），最多 8 页（段）**，每段 80-150 字。
+1. 故事篇幅：**最少 5 页（段），最多 7 页（段）**，每段 80-150 字。
 2. 语言风格：
    - 简单生动，适合少儿理解
    - 多用拟声词（"咕噜咕噜"、"扑通"、"叮当"）和生动形容词
@@ -280,12 +280,12 @@ def _parse_outline(data: dict) -> StoryOutline:
             )
         logger.info(f"[LLM] 互动节点超过 3 个，已保留前 3 个，移除第 {[x+1 for x in interaction_indices[3:]]} 段互动")
     
-    # 篇幅限制：最少 5 页，最多 8 页
-    if len(segments) > 8:
-        segments = segments[:8]
-        logger.info("[LLM] 段落超过 8 页，已截断为前 8 页")
+    # 篇幅限制：最少 5 页，最多 7 页
+    if len(segments) > 7:
+        segments = segments[:7]
+        logger.info("[LLM] 段落超过 7 页，已截断为前 7 页")
     if len(segments) < 5:
-        logger.warning(f"[LLM] 段落数为 {len(segments)}，建议 5-8 页")
+        logger.warning(f"[LLM] 段落数为 {len(segments)}，建议 5-7 页")
     
     # 确保最后一段没有互动节点（因为是结局）
     if segments and segments[-1].interaction_point:
@@ -489,6 +489,7 @@ async def continue_story_with_interaction(
     user_input: str,
     current_segment_count: int,
     total_interactions_used: int,
+    max_total_pages: int = 7,  # 用户设定的最大总页数
 ) -> ContinueResponse:
     """根据互动回答生成反馈与续写段落。
     
@@ -499,9 +500,10 @@ async def continue_story_with_interaction(
         user_input: 用户回答
         current_segment_count: 当前已有段落数（续写前）
         total_interactions_used: 已使用的交互次数
+        max_total_pages: 用户设定的最大总页数（包括互动续写的页数）
     """
-    # 计算剩余空间：最多8页，已有 current_segment_count 页
-    remaining_segments = 8 - current_segment_count
+    # 计算剩余空间：使用用户设定的max_total_pages，已有 current_segment_count 页
+    remaining_segments = max_total_pages - current_segment_count
     is_near_end = remaining_segments <= 3  # 剩余3页或更少就接近结尾
     is_last_interaction = total_interactions_used >= 2  # 已经2次或更多互动，不应再加互动
     
@@ -509,13 +511,13 @@ async def continue_story_with_interaction(
     if is_near_end or is_last_interaction:
         progress_hint = f"""
 **故事进度提示（必须遵守）**：
-- 当前故事已有 {current_segment_count} 页，最多只能再有 {remaining_segments} 页。
+- 当前故事已有 {current_segment_count} 页，用户设定的故事总长度为 {max_total_pages} 页，最多只能再有 {remaining_segments} 页。
 - 这是{'最后一次' if is_last_interaction else '接近尾声的'}互动，续写必须在 1-2 段内给出完整结局。
 - 续写的最后一段必须是故事的完整结束（问题解决、角色成长、传递寓意），且不能有 interaction_point。
 """
     else:
         progress_hint = f"""
-**故事进度提示**：当前故事已有 {current_segment_count} 页，最多8页。续写 1-2 段即可，不要一次续写太多。
+**故事进度提示**：当前故事已有 {current_segment_count} 页，用户设定的故事总长度为 {max_total_pages} 页。续写 1-2 段即可，不要一次续写太多。
 """
     
     user_content = f"""当前故事上下文：
