@@ -18,7 +18,7 @@
 ```bash
 # 拉取并运行 jimeng-api
 docker-compose up -d jimeng-api
-# 服务地址: http://localhost:5100
+# 服务地址: http://localhost:1002（端口 1000-10010 适配 ECS 部署）
 ```
 
 获取 **sessionid**：浏览器登录 [即梦](https://jimeng.jianying.com) 或 [Dreamina](https://dreamina.capcut.com)，F12 → Application → Cookies → 复制 `sessionid`。
@@ -32,7 +32,7 @@ cp .env.example .env
 
 必填项：
 
-- `JIMENG_API_BASE_URL` — 即梦服务地址，默认 `http://localhost:5100`
+- `JIMENG_API_BASE_URL` — 即梦服务地址，默认 `http://localhost:1002`
 - `JIMENG_SESSION_ID` — 即梦登录后的 sessionid
 - `LLM_API_BASE`、`LLM_API_KEY`、`LLM_MODEL` — 任选一个 OpenAI 兼容的 LLM（用于生成/续写故事）
 
@@ -45,20 +45,20 @@ cd backend
 python -m venv .venv
 source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8100
+uvicorn app.main:app --reload --host 0.0.0.0 --port 1001
 ```
 
-API 文档: http://localhost:8100/docs
+API 文档: http://localhost:1001/docs
 
 ### 4. 前端
 
 ```bash
 cd frontend
 npm install
-npm run dev
+npm run dev   # 开发环境已绑定端口 1000
 ```
 
-浏览器打开 http://localhost:3000
+浏览器打开 http://localhost:1000。生产/ECS 部署时可用 `PORT=1000 npm start`。
 
 ## 项目结构
 
@@ -132,8 +132,8 @@ interactive-storybook/
 ## 常见问题
 
 1. **前端代理失败 "socket hang up"**  
-   ✅ 已修复：前端现在直接调用 `http://localhost:8100`，无需 rewrites。  
-   - 确保后端正在运行：`curl http://localhost:8100/health`
+   ✅ 已修复：前端现在直接调用 `http://localhost:1001`，无需 rewrites。  
+   - 确保后端正在运行：`curl http://localhost:1001/health`
    - 重启前端以应用新配置
    - 详见 `TROUBLESHOOTING.md`
 

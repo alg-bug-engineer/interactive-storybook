@@ -10,15 +10,15 @@ _env_file = _root_env if _root_env.exists() else ".env"
 
 
 class Settings(BaseSettings):
-    # 即梦 API (方案 B - 本地服务，免费用户使用)
-    jimeng_api_base_url: str = "http://localhost:5100"
+    # 即梦 API (方案 B - 本地服务，免费用户使用)，端口 1000-10010 避免 ECS 冲突
+    jimeng_api_base_url: str = "http://localhost:1002"
     jimeng_session_id: str = ""
     jimeng_model: str = "jimeng-4.5"
 
-    # 后端
+    # 后端（端口 1001）
     backend_host: str = "0.0.0.0"
-    backend_port: int = 8100
-    api_cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
+    backend_port: int = 1001
+    api_cors_origins: str = "http://localhost:1000,http://127.0.0.1:1000"
 
     # LLM (OpenAI 兼容)
     llm_api_base: str = "https://api.openai.com/v1"

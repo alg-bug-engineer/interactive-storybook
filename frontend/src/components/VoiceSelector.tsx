@@ -70,7 +70,7 @@ export default function VoiceSelector({ onClose, showTitle = true }: VoiceSelect
       const data = await previewVoice(voiceId);
       
       // 构造完整的音频 URL（后端返回的是相对路径，需要加上 API base URL）
-      const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8100";
+      const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:1001";
       const audioUrl = `${API}${data.audio_url}`;
 
       // 播放音频

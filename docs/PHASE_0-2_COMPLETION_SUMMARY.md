@@ -188,13 +188,13 @@ frontend/src/
 ### API 端点测试
 ```bash
 # 1. 获取音色列表
-curl http://localhost:8100/api/voices/list
+curl http://localhost:1001/api/voices/list
 
 # 2. 试听音色
-curl http://localhost:8100/api/voices/preview/zh-CN-XiaoxiaoNeural
+curl http://localhost:1001/api/voices/preview/zh-CN-XiaoxiaoNeural
 
 # 3. 获取推荐音色
-curl http://localhost:8100/api/voices/recommended
+curl http://localhost:1001/api/voices/recommended
 ```
 
 ---
@@ -212,7 +212,7 @@ curl http://localhost:8100/api/voices/recommended
 ```bash
 cd backend
 pip install -r requirements.txt
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8100
+uvicorn app.main:app --reload --host 0.0.0.0 --port 1001
 ```
 
 **前端**
@@ -223,9 +223,9 @@ npm run dev
 ```
 
 ### 访问地址
-- 前端：http://localhost:3000
-- 后端 API：http://localhost:8100
-- API 文档：http://localhost:8100/docs
+- 前端：http://localhost:1000
+- 后端 API：http://localhost:1001
+- API 文档：http://localhost:1001/docs
 
 ---
 

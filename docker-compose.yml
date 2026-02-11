@@ -10,7 +10,7 @@ services:
     image: ghcr.io/iptag/jimeng-api:latest
     container_name: interactive-storybook-jimeng
     ports:
-      - "5100:5100"
+      - "1002:5100"
     restart: unless-stopped
     # 环境变量可在 .env 中配置，sessionid 由后端通过请求头传入
 
@@ -18,7 +18,7 @@ services:
   # backend:
   #   build: ./backend
   #   ports:
-  #     - "8100:8100"
+  #     - "1001:1001"
   #   env_file: .env
   #   depends_on: []
   #   volumes:

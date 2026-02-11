@@ -187,7 +187,7 @@ async def generate_image(
                 # 返回静态文件URL
                 filename = Path(compressed_path).name
                 settings = get_settings()
-                # 假设后端运行在 localhost:8100
+                # 假设后端运行在 localhost:1001
                 api_base = f"http://localhost:{settings.backend_port}"
                 return f"{api_base}/static/images/{filename}"
             return compressed_path

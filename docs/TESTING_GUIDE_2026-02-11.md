@@ -33,7 +33,7 @@ VOLCANO_TTS_ACCESS_TOKEN=your_access_token_here
 ```bash
 # 后端
 cd backend
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8100
+uvicorn app.main:app --reload --host 0.0.0.0 --port 1001
 
 # 前端
 cd frontend
@@ -50,7 +50,7 @@ npm run dev
 
 **步骤**:
 1. 清除浏览器缓存和 localStorage
-2. 访问 http://localhost:3000
+2. 访问 http://localhost:1000
 3. 点击"开始新故事"
 4. 观察图片和音频生成
 
@@ -75,7 +75,7 @@ tail -f backend/logs/app.log | grep "服务类型"
 **步骤**:
 1. 注册新用户
    ```bash
-   curl -X POST http://localhost:8100/api/auth/register \
+   curl -X POST http://localhost:1001/api/auth/register \
      -H "Content-Type: application/json" \
      -d '{"email":"free@example.com","password":"123456"}'
    ```
@@ -83,7 +83,7 @@ tail -f backend/logs/app.log | grep "服务类型"
 
 2. 使用 token 创建故事
    ```bash
-   curl -X POST http://localhost:8100/api/story/start \
+   curl -X POST http://localhost:1001/api/story/start \
      -H "Content-Type: application/json" \
      -H "Authorization: Bearer YOUR_TOKEN" \
      -d '{"theme":"小兔子找萝卜","total_pages":5}'
@@ -114,13 +114,13 @@ cat backend/data/users/*.json | jq .
 1. 注册并登录用户
 2. 升级为付费用户
    ```bash
-   curl -X POST http://localhost:8100/api/auth/upgrade \
+   curl -X POST http://localhost:1001/api/auth/upgrade \
      -H "Authorization: Bearer YOUR_TOKEN"
    ```
 
 3. 创建新故事
    ```bash
-   curl -X POST http://localhost:8100/api/story/start \
+   curl -X POST http://localhost:1001/api/story/start \
      -H "Content-Type: application/json" \
      -H "Authorization: Bearer YOUR_TOKEN" \
      -d '{"theme":"小猫咪探险","total_pages":5}'

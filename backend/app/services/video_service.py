@@ -33,7 +33,7 @@ async def _url_to_local_path(image_url: str) -> Optional[str]:
     将图片URL转换为本地文件路径
     
     Args:
-        image_url: 图片URL（可能是 http://localhost:8100/images/xxx.png）
+        image_url: 图片URL（可能是 http://localhost:1001/images/xxx.png）
     
     Returns:
         本地文件路径，如果找不到返回 None

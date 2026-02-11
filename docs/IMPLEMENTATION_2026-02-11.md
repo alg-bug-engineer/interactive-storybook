@@ -244,7 +244,7 @@ cp .env.example .env
 ```bash
 # 后端
 cd backend
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8100
+uvicorn app.main:app --reload --host 0.0.0.0 --port 1001
 
 # 前端（如果需要）
 cd frontend

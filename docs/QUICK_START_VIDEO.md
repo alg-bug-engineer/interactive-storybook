@@ -41,7 +41,7 @@ VIDEO_OUTPUT_DIR=/tmp/storybook_videos
 ```bash
 # 后端
 cd backend
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8100
+uvicorn app.main:app --reload --host 0.0.0.0 --port 1001
 
 # 前端
 cd frontend
@@ -102,7 +102,7 @@ npm run dev
 ### 生成视频
 
 ```bash
-curl -X POST http://localhost:8100/api/video/generate \
+curl -X POST http://localhost:1001/api/video/generate \
   -H "Content-Type: application/json" \
   -d '{
     "story_id": "abc123",
@@ -113,7 +113,7 @@ curl -X POST http://localhost:8100/api/video/generate \
 ### 查询进度
 
 ```bash
-curl http://localhost:8100/api/video/status/abc123
+curl http://localhost:1001/api/video/status/abc123
 ```
 
 响应：
@@ -133,7 +133,7 @@ curl http://localhost:8100/api/video/status/abc123
 ### 下载视频
 
 ```bash
-curl -O http://localhost:8100/api/video/download/abc123
+curl -O http://localhost:1001/api/video/download/abc123
 ```
 
 ## 测试脚本
@@ -203,7 +203,7 @@ motion_prompt = f"{current_seg.emotion} mood transition, smooth cinematic camera
 1. 检查即梦 API 是否支持视频：
 
 ```bash
-curl -X POST http://localhost:5100/v1/videos/generations \
+curl -X POST http://localhost:1002/v1/videos/generations \
   -H "Authorization: Bearer YOUR_SESSION_ID" \
   -H "Content-Type: application/json" \
   -d '{
@@ -236,7 +236,7 @@ tail -f logs/app.log | grep -E "(ERROR|视频服务)"
 
 ```bash
 # 查询状态
-curl http://localhost:8100/api/video/status/YOUR_STORY_ID
+curl http://localhost:1001/api/video/status/YOUR_STORY_ID
 
 # 检查文件
 ls -lh /tmp/storybook_videos/

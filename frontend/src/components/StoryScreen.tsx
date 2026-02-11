@@ -78,7 +78,7 @@ export default function StoryScreen({ initialData, onBack }: StoryScreenProps) {
       setAudioPlayCompleted(false);
       try {
         const data = await getSegmentAudio(storyId, segmentIndex, selectedVoiceId, playbackSpeed);
-        const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8100";
+        const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:1001";
         setSegmentAudioUrl(`${API}${data.audio_url}`);
       } catch (e) {
         setSegmentAudioUrl(null);

@@ -103,7 +103,7 @@ load_stories_from_disk()
       "scene_description": "rabbit in sunny forest",
       "emotion": "warm",
       "interaction_point": null,
-      "image_url": "http://localhost:8100/static/images/abc123.jpg"
+      "image_url": "http://localhost:1001/static/images/abc123.jpg"
     }
   ],
   "current_index": 0,

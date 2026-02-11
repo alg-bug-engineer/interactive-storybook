@@ -96,7 +96,7 @@ pip install -r requirements.txt
 ```bash
 # 后端
 cd backend
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8100
+uvicorn app.main:app --reload --host 0.0.0.0 --port 1001
 
 # 前端（如果已在运行，无需重启）
 cd frontend
@@ -126,7 +126,7 @@ npm run dev
    - 生产环境可迁移到 CDN 或 OSS
 
 2. **静态文件路径**：
-   - 开发环境：`http://localhost:8100/static/images/{filename}.jpg`
+   - 开发环境：`http://localhost:1001/static/images/{filename}.jpg`
    - 生产环境：需修改 `jimeng_service.py` 中的 URL 拼接逻辑
 
 3. **视频调试**：

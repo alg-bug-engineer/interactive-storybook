@@ -176,7 +176,7 @@ python test_tts.py
 
 ### 检查后端服务
 
-访问：http://localhost:8100/api/voices/list
+访问：http://localhost:1001/api/voices/list
 
 **预期响应**：
 ```json

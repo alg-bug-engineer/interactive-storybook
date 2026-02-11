@@ -1,10 +1,10 @@
 // 开发环境直接调用后端，生产环境可通过环境变量配置
 // 注意：必须使用完整 URL，不能使用相对路径，否则 Next.js 会将其当作页面路由
-const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8100";
+const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:1001";
 
 // 确保 API 基础 URL 是完整的
 if (!API.startsWith('http://') && !API.startsWith('https://')) {
-  console.warn('API base URL should be a full URL, defaulting to http://localhost:8100');
+  console.warn('API base URL should be a full URL, defaulting to http://localhost:1001');
 }
 
 /** 带认证的请求头（用于需登录的接口） */

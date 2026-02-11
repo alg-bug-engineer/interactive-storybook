@@ -104,15 +104,15 @@ const audioUrl = getAudioUrl(data.audio_url);  // ❌ 重复拼接
 **修改后：**
 ```typescript
 const data = await previewVoice(voiceId);
-const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8100";
+const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:1001";
 const audioUrl = `${API}${data.audio_url}`;  // ✅ 直接拼接
 ```
 
 **路径流程：**
 ```
 后端返回: /api/audio/data/audio/preview/zh-CN-XiaoxiaoNeural.mp3
-前端拼接: http://localhost:8100 + /api/audio/data/audio/preview/zh-CN-XiaoxiaoNeural.mp3
-最终URL:  http://localhost:8100/api/audio/data/audio/preview/zh-CN-XiaoxiaoNeural.mp3 ✅
+前端拼接: http://localhost:1001 + /api/audio/data/audio/preview/zh-CN-XiaoxiaoNeural.mp3
+最终URL:  http://localhost:1001/api/audio/data/audio/preview/zh-CN-XiaoxiaoNeural.mp3 ✅
 ```
 
 ---
@@ -135,17 +135,17 @@ python test_tts.py
 ### API 测试
 ```bash
 # 1. 获取音色列表
-curl http://localhost:8100/api/voices/list
+curl http://localhost:1001/api/voices/list
 
 # 2. 试听音色
-curl http://localhost:8100/api/voices/preview/zh-CN-XiaoxiaoNeural
+curl http://localhost:1001/api/voices/preview/zh-CN-XiaoxiaoNeural
 
 # 3. 访问音频文件
-curl http://localhost:8100/api/audio/data/audio/preview/zh-CN-XiaoxiaoNeural.mp3 --output test.mp3
+curl http://localhost:1001/api/audio/data/audio/preview/zh-CN-XiaoxiaoNeural.mp3 --output test.mp3
 ```
 
 ### 前端测试
-1. 打开 http://localhost:3000
+1. 打开 http://localhost:1000
 2. 点击右上角 🎙️ 按钮
 3. 点击任意音色的"▶️ 试听"
 4. ✅ 应该能听到预览音频

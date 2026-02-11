@@ -86,7 +86,7 @@ edge-tts --list-voices | grep "zh-CN"
 #### 启动后端
 ```bash
 cd backend
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8100
+uvicorn app.main:app --reload --host 0.0.0.0 --port 1001
 ```
 
 ### 2. 前端部署
@@ -130,7 +130,7 @@ npm run dev
 
 #### 获取音色列表
 ```bash
-curl http://localhost:8100/api/voices/list
+curl http://localhost:1001/api/voices/list
 ```
 
 预期返回：
@@ -144,7 +144,7 @@ curl http://localhost:8100/api/voices/list
 
 #### 试听音色
 ```bash
-curl http://localhost:8100/api/voices/preview/zh-CN-XiaoxiaoNeural
+curl http://localhost:1001/api/voices/preview/zh-CN-XiaoxiaoNeural
 ```
 
 预期返回：
@@ -158,7 +158,7 @@ curl http://localhost:8100/api/voices/preview/zh-CN-XiaoxiaoNeural
 
 #### 保存用户偏好（需登录）
 ```bash
-curl -X POST http://localhost:8100/api/voices/preferences \
+curl -X POST http://localhost:1001/api/voices/preferences \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_TOKEN" \
   -d '{"preferred_voice":"zh-CN-XiaoyiNeural","playback_speed":1.25}'
@@ -203,7 +203,7 @@ pip install --upgrade edge-tts --user
 - 后端启动时会自动预生成 3 个推荐音色的预览
 - 可手动触发预生成：
 ```bash
-curl -X POST http://localhost:8100/api/voices/preview/zh-CN-XiaoxiaoNeural
+curl -X POST http://localhost:1001/api/voices/preview/zh-CN-XiaoxiaoNeural
 ```
 
 ### Q3: 音频文件 404
