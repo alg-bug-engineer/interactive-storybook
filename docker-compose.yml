@@ -11,8 +11,15 @@ services:
     container_name: interactive-storybook-jimeng
     ports:
       - "1002:5100"
+    environment:
+      - JIMENG_SESSION_ID=${JIMENG_SESSION_ID}
     restart: unless-stopped
-    # 环境变量可在 .env 中配置，sessionid 由后端通过请求头传入
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5100/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
   # 可选：后端 API 服务（也可本地直接运行 python）
   # backend:
