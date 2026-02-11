@@ -847,19 +847,46 @@ async def generate_story_video(
             clip_path = temp_dir / f"clip_{k:03d}.mp4"
             await download_file(video_url, str(clip_path))
             video_clips.append(str(clip_path))
+
             if enable_audio and seg_i < len(segments) and segments[seg_i].text:
-                audio_path = temp_dir / f"audio_{k:03d}.mp3"
-                # 使用默认音色生成音频
-                audio_file = await generate_tts_audio(
-                    text=segments[seg_i].text,
-                    output_path=str(audio_path),
-                    voice_id="zh-CN-XiaoxiaoNeural",  # 默认中文女声
-                )
-                if audio_file:
-                    logger.info(f"[视频服务] 片段 {k} 音频生成成功: {audio_file}")
+                # 优先查找已缓存的音频文件
+                cached_audio = None
+
+                # 1. 检查 TTS 缓存目录（edge-tts）
+                from app.services.tts_service import TTS_AUDIO_DIR, DEFAULT_VOICE_ID
+                from app.constants.voices import AVAILABLE_VOICES
+
+                # 尝试常用音色的缓存文件
+                common_voices = [DEFAULT_VOICE_ID, "zh-CN-XiaoxiaoNeural", "zh-CN-YunxiNeural"]
+                for voice in common_voices:
+                    cached_path = TTS_AUDIO_DIR / f"{story_id}_{seg_i}_{voice}.mp3"
+                    if cached_path.exists() and cached_path.stat().st_size > 0:
+                        cached_audio = str(cached_path)
+                        logger.info(f"[视频服务] ✅ 使用已缓存的音频: {cached_path.name}")
+                        break
+
+                # 2. 如果没有缓存，则生成新音频
+                if not cached_audio:
+                    audio_path = temp_dir / f"audio_{k:03d}.mp3"
+                    logger.info(f"[视频服务] 未找到缓存音频，为片段 {k} 生成新音频")
+                    try:
+                        audio_file = await generate_tts_audio(
+                            text=segments[seg_i].text,
+                            output_path=str(audio_path),
+                            voice_id=DEFAULT_VOICE_ID,
+                        )
+                        if audio_file:
+                            logger.info(f"[视频服务] 片段 {k} 音频生成成功: {audio_file}")
+                            audio_clips.append(audio_file)
+                        else:
+                            logger.warning(f"[视频服务] ⚠️ 片段 {k} 音频生成失败，将跳过音频")
+                            audio_clips.append("")
+                    except Exception as e:
+                        logger.error(f"[视频服务] ❌ 片段 {k} 音频生成异常: {e}")
+                        audio_clips.append("")
                 else:
-                    logger.warning(f"[视频服务] ⚠️ 片段 {k} 音频生成失败，将跳过音频")
-                audio_clips.append(audio_file)
+                    # 使用缓存的音频
+                    audio_clips.append(cached_audio)
             else:
                 audio_clips.append("")
 
