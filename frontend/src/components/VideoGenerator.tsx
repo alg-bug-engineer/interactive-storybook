@@ -6,7 +6,6 @@ import {
   generateVideo,
   getVideoStatus,
   getVideoDownloadUrl,
-  upgradeToPaid,
   type VideoStatusResponse,
 } from "@/services/api";
 import { useAuthStore } from "@/stores/authStore";
@@ -26,6 +25,7 @@ const STATUS_TEXT: Record<string, string> = {
   completed: "视频已生成！",
   failed: "生成失败",
 };
+const STATUS_POLL_INTERVAL_MS = 5000;
 
 export default function VideoGenerator({
   storyId,
@@ -37,9 +37,8 @@ export default function VideoGenerator({
   const [status, setStatus] = useState<VideoStatusResponse | null>(null);
   const [error, setError] = useState<string>("");
   const [showModal, setShowModal] = useState(false);
-  const [showPayModal, setShowPayModal] = useState(false);
 
-  const { user, token, setUser } = useAuthStore();
+  const { user, token } = useAuthStore();
 
   // 轮询检查视频生成状态
   const pollVideoStatus = useCallback(async () => {
@@ -59,20 +58,16 @@ export default function VideoGenerator({
     }
   }, [storyId]);
 
-  // 点击「一键转视频」：检查登录与付费
+  // 点击「一键转视频」：检查登录状态
   const onVideoButtonClick = () => {
     if (!user || !token) {
       alert("请先登录后再使用视频生成功能");
       return;
     }
-    if (!user.is_paid) {
-      setShowPayModal(true);
-      return;
-    }
     handleGenerateVideo();
   };
 
-  // 开始生成视频（仅付费用户会走到这里）
+  // 开始生成视频
   const handleGenerateVideo = async () => {
     if (!isStoryCompleted) {
       setError("请先完成整个故事再生成视频");
@@ -89,24 +84,9 @@ export default function VideoGenerator({
     setShowModal(true);
 
     try {
-      await generateVideo(storyId, false); // 暂时不启用音频
+      await generateVideo(storyId, true);
       console.log("[视频生成] 任务已启动，开始轮询状态...");
-
-      // 开始轮询状态
-      const pollInterval = setInterval(async () => {
-        await pollVideoStatus();
-      }, 3000); // 每 3 秒查询一次
-
-      // 10 分钟后停止轮询（防止无限轮询）
-      setTimeout(() => {
-        clearInterval(pollInterval);
-        if (isGenerating) {
-          setIsGenerating(false);
-          setError("生成超时，请稍后重试");
-        }
-      }, 600000);
-
-      return () => clearInterval(pollInterval);
+      await pollVideoStatus();
     } catch (e) {
       setIsGenerating(false);
       setError(e instanceof Error ? e.message : "生成视频失败");
@@ -142,7 +122,7 @@ export default function VideoGenerator({
   useEffect(() => {
     if (!isGenerating) return;
 
-    const interval = setInterval(pollVideoStatus, 3000);
+    const interval = setInterval(pollVideoStatus, STATUS_POLL_INTERVAL_MS);
     return () => clearInterval(interval);
   }, [isGenerating, pollVideoStatus]);
 
@@ -157,18 +137,6 @@ export default function VideoGenerator({
       : status?.status === "failed"
       ? "text-red-600"
       : "text-blue-600";
-
-  const handleClosePayModal = async () => {
-    if (!token) return;
-    try {
-      const updated = await upgradeToPaid(token);
-      setUser(updated);
-    } catch (_) {
-      // 仍关闭弹窗，本地可视为已付费（演示）
-      setUser({ ...user!, is_paid: true });
-    }
-    setShowPayModal(false);
-  };
 
   return (
     <>
@@ -201,46 +169,6 @@ export default function VideoGenerator({
           {isGenerating ? "生成中..." : "一键转视频"}
         </button>
       </div>
-
-      {/* 付费提示弹窗：免费用户点击视频生成时显示，关闭时模拟升级为付费用户 */}
-      <AnimatePresence>
-        {showPayModal && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
-            onClick={handleClosePayModal}
-          >
-            <motion.div
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <h3 className="text-lg font-bold text-gray-800 mb-2">视频生成为付费功能</h3>
-              <p className="text-gray-600 text-sm mb-4">
-                该功能仅对付费用户开放，请扫码支付后使用。
-              </p>
-              <div className="flex justify-center mb-4 p-4 bg-gray-100 rounded-xl">
-                <div className="w-40 h-40 flex items-center justify-center text-gray-400 border-2 border-dashed border-gray-300 rounded-lg">
-                  收款码
-                </div>
-              </div>
-              <p className="text-gray-500 text-xs mb-4">
-                当前为演示：关闭本窗口即视为已付费，可立即使用视频生成。
-              </p>
-              <button
-                onClick={handleClosePayModal}
-                className="w-full py-2 rounded-story-md bg-primary text-white font-medium"
-              >
-                关闭（已付款）
-              </button>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
 
       {/* 状态模态框 */}
       <AnimatePresence>

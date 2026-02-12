@@ -1,9 +1,9 @@
 """视频生成相关 API"""
-import asyncio
 import logging
-from fastapi import APIRouter, HTTPException, BackgroundTasks
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
+from app.routers.auth import get_current_user_optional
 from app.services.video_service import (
     generate_story_video,
     get_video_generation_status,
@@ -31,7 +31,11 @@ class VideoStatusResponse(BaseModel):
 
 
 @router.post("/generate")
-async def generate_video(req: GenerateVideoRequest, background_tasks: BackgroundTasks):
+async def generate_video(
+    req: GenerateVideoRequest,
+    background_tasks: BackgroundTasks,
+    current_user: dict = Depends(get_current_user_optional),
+):
     """
     生成故事视频（异步任务）
     
@@ -64,6 +68,8 @@ async def generate_video(req: GenerateVideoRequest, background_tasks: Background
         segments=state.segments,
         title=state.title,
         enable_audio=req.enable_audio,
+        user=current_user,
+        prebuilt_clips=dict(state.video_clips or {}),
     )
     
     logger.info(f"[视频 API] ✅ 视频生成任务已启动: {req.story_id}")
@@ -82,7 +88,7 @@ async def get_video_status(story_id: str) -> VideoStatusResponse:
     
     - **story_id**: 故事 ID
     """
-    logger.info(f"[视频 API] 查询视频生成状态: {story_id}")
+    logger.info(f"[视频 API] 查询视频生成状态: story_id={story_id}（故事ID，非即梦task_id）")
     
     status = get_video_generation_status(story_id)
     if not status:

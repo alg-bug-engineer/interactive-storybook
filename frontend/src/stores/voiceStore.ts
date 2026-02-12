@@ -16,6 +16,7 @@ import {
   getVoicePreferences,
   saveVoicePreferences,
 } from "@/services/api";
+import { getStoredToken } from "@/stores/authStore";
 
 interface VoiceState {
   // 当前选中的音色 ID
@@ -36,7 +37,7 @@ interface VoiceState {
   // 操作方法
   setVoice: (voiceId: string, saveToBackend?: boolean) => Promise<void>;
   setPlaybackSpeed: (speed: number, saveToBackend?: boolean) => Promise<void>;
-  loadVoices: () => Promise<void>;
+  loadVoices: (token?: string | null) => Promise<void>;
   loadPreferences: (token?: string | null) => Promise<void>;
   getSelectedVoice: () => Voice | null;
 }
@@ -59,8 +60,7 @@ export const useVoiceStore = create<VoiceState>()(
         // 保存到后端（可选）
         if (saveToBackend) {
           try {
-            // 尝试从 authStore 获取 token（避免循环依赖）
-            const token = localStorage.getItem("token");
+            const token = getStoredToken();
             await saveVoicePreferences({ preferred_voice: voiceId }, token);
           } catch (error) {
             console.warn("保存音色偏好到后端失败（可能未登录）:", error);
@@ -77,7 +77,7 @@ export const useVoiceStore = create<VoiceState>()(
         // 保存到后端（可选）
         if (saveToBackend) {
           try {
-            const token = localStorage.getItem("token");
+            const token = getStoredToken();
             await saveVoicePreferences({ playback_speed: clampedSpeed }, token);
           } catch (error) {
             console.warn("保存播放倍速到后端失败（可能未登录）:", error);
@@ -85,21 +85,23 @@ export const useVoiceStore = create<VoiceState>()(
         }
       },
 
-      loadVoices: async () => {
+      loadVoices: async (token?: string | null) => {
         set({ isLoading: true });
         try {
-          const data = await listVoices();
+          const tokenToUse = token ?? getStoredToken();
+          const data = await listVoices(tokenToUse);
+          const current = get().selectedVoiceId;
+          const nextSelected =
+            current && data.voices.find((v) => v.id === current)
+              ? current
+              : data.default_voice_id;
+
           set({
             voices: data.voices,
             ttsAvailable: data.tts_available,
+            selectedVoiceId: nextSelected,
             isLoading: false,
           });
-          
-          // 如果当前选中的音色无效，重置为默认
-          const current = get().selectedVoiceId;
-          if (current && !data.voices.find((v) => v.id === current)) {
-            set({ selectedVoiceId: data.default_voice_id });
-          }
         } catch (error) {
           console.error("加载音色列表失败:", error);
           set({ isLoading: false, ttsAvailable: false });

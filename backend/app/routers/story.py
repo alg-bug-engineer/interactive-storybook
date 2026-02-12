@@ -4,8 +4,8 @@ import logging
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from app.models.story import InteractRequest
-from app.routers.auth import get_current_user, get_current_user_optional
-from app.constants.voices import DEFAULT_VOICE_ID, is_valid_voice
+from app.routers.auth import get_current_user_optional
+from app.constants.voices import get_default_voice_id, normalize_voice_for_user
 from app.services.story_engine import (
     start_new_story,
     get_story,
@@ -16,12 +16,79 @@ from app.services.story_engine import (
 )
 from app.services.tts_service import HAS_EDGE_TTS
 from app.services.tts_generation_service import generate_segment_tts
+from app.services.volcano_tts_service import is_volcano_tts_available
+from app.services.video_service import generate_video_clip_between_segments
 from app.utils.store import list_stories
 from app.constants.story_styles import DEFAULT_STYLE_ID, get_all_styles
+from app.utils.url_utils import normalize_image_url
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/story", tags=["story"])
+
+
+def _serialize_segment(seg):
+    if not seg:
+        return None
+    data = seg.model_dump()
+    data["image_url"] = normalize_image_url(data.get("image_url"))
+    return data
+
+
+def _serialize_segments(segments):
+    return [_serialize_segment(s) for s in segments]
+
+
+def _kickoff_premium_video_pregen(story_id: str, state, current_user: dict | None) -> None:
+    """
+    付费用户在阅读过程中触发视频片段预生成：
+    - 浏览到第2页（index=1）时开始预生成第1个镜头（0->1）
+    - 后续每翻一页继续预生成上一镜头
+    """
+    if not current_user or not current_user.get("is_paid"):
+        return
+    seg_index = state.current_index - 1
+    if seg_index < 0:
+        return
+    asyncio.create_task(
+        generate_video_clip_between_segments(
+            story_id=story_id,
+            segment_index=seg_index,
+            segments=state.segments,
+            user=current_user,
+        )
+    )
+
+
+def _kickoff_initial_tts_pregen(story_id: str, state, current_user: dict | None) -> None:
+    """
+    故事文本生成后，首段 TTS 与图片生成并行进行，避免“先图后音”的串行体验。
+    """
+    seg, _ = get_current_segment(state)
+    if not seg:
+        return
+
+    text = (seg.text or "").strip()
+    if not text:
+        return
+
+    is_premium = bool(current_user and current_user.get("is_paid"))
+    if is_premium and not is_volcano_tts_available():
+        return
+    if not is_premium and not HAS_EDGE_TTS:
+        return
+
+    default_voice = normalize_voice_for_user(get_default_voice_id(current_user), current_user)
+    asyncio.create_task(
+        generate_segment_tts(
+            story_id=story_id,
+            segment_index=state.current_index,
+            text=text,
+            voice_id=default_voice,
+            speed=1.0,
+            user=current_user,
+        )
+    )
 
 
 class StartStoryRequest(BaseModel):
@@ -52,6 +119,7 @@ async def start(
     try:
         state = await start_new_story(user_theme=theme, total_pages=total_pages, no_interaction=no_interaction, style_id=style_id, user=current_user)
         seg, has_interaction = get_current_segment(state)
+        _kickoff_initial_tts_pregen(state.id, state, current_user)
         return {
             "story_id": state.id,
             "title": state.title,
@@ -60,7 +128,7 @@ async def start(
             "setting": state.setting.model_dump(),
             "total_segments": len(state.segments),
             "current_index": state.current_index,
-            "current_segment": seg.model_dump() if seg else None,
+            "current_segment": _serialize_segment(seg),
             "has_interaction": has_interaction,
             "status": state.status,
             "style_id": getattr(state, "style_id", DEFAULT_STYLE_ID),
@@ -72,7 +140,10 @@ async def start(
 @router.get("/list")
 async def list_stories_api():
     """获取所有故事摘要，用于主页画廊展示（按创建时间倒序）。"""
-    return {"stories": list_stories()}
+    stories = list_stories()
+    for item in stories:
+        item["cover_url"] = normalize_image_url(item.get("cover_url"))
+    return {"stories": stories}
 
 
 @router.get("/styles")
@@ -94,10 +165,10 @@ async def get_story_state(story_id: str):
         "theme": state.theme,
         "characters": [c.model_dump() for c in state.characters],
         "setting": state.setting.model_dump(),
-        "segments": [s.model_dump() for s in state.segments],
+        "segments": _serialize_segments(state.segments),
         "total_segments": len(state.segments),
         "current_index": state.current_index,
-        "current_segment": seg.model_dump() if seg else None,
+        "current_segment": _serialize_segment(seg),
         "has_interaction": has_interaction,
         "status": state.status,
         "style_id": getattr(state, "style_id", DEFAULT_STYLE_ID),
@@ -131,7 +202,7 @@ async def get_segment_image(story_id: str, segment_index: int):
     return {
         "story_id": story_id,
         "segment_index": segment_index,
-        "image_url": seg.image_url,
+        "image_url": normalize_image_url(seg.image_url),
         "has_image": seg.image_url is not None,
     }
 
@@ -146,8 +217,13 @@ async def get_segment_audio(
 ):
     """获取或生成指定段落的 TTS 音频，用于前端朗读。
     付费用户使用火山 TTS API，免费用户和未登录用户使用 edge-tts。"""
-    if not HAS_EDGE_TTS:
-        raise HTTPException(status_code=503, detail="TTS 服务不可用（edge-tts 未安装）")
+    is_premium = bool(current_user and current_user.get("is_paid"))
+    if is_premium:
+        if not is_volcano_tts_available():
+            raise HTTPException(status_code=503, detail="TTS 服务不可用（火山 TTS 配置缺失）")
+    else:
+        if not HAS_EDGE_TTS:
+            raise HTTPException(status_code=503, detail="TTS 服务不可用（edge-tts 未安装）")
 
     state = get_story(story_id)
     if not state:
@@ -168,9 +244,8 @@ async def get_segment_audio(
     speed = max(0.5, min(2.0, speed))
 
     # voice 校验；无效则回退默认
-    vid = (voice_id or "").strip() or DEFAULT_VOICE_ID
-    if not is_valid_voice(vid):
-        vid = DEFAULT_VOICE_ID
+    requested_voice_id = (voice_id or "").strip() or get_default_voice_id(current_user)
+    vid = normalize_voice_for_user(requested_voice_id, current_user)
 
     try:
         audio_path = await generate_segment_tts(
@@ -221,11 +296,12 @@ async def next_segment(story_id: str, current_user: dict = Depends(get_current_u
     state = await go_next_segment(story_id, user=current_user)
     if not state:
         raise HTTPException(status_code=404, detail="故事不存在或已结束")
+    _kickoff_premium_video_pregen(story_id, state, current_user)
     seg, has_interaction = get_current_segment(state)
     return {
         "story_id": state.id,
         "current_index": state.current_index,
-        "current_segment": seg.model_dump() if seg else None,
+        "current_segment": _serialize_segment(seg),
         "has_interaction": has_interaction,
         "status": state.status,
     }
@@ -241,15 +317,16 @@ async def interact(req: InteractRequest, current_user: dict = Depends(get_curren
         if not state:
             logger.error(f"[API] ❌ 故事不存在: {req.story_id}")
             raise HTTPException(status_code=404, detail="故事不存在")
+        _kickoff_premium_video_pregen(req.story_id, state, current_user)
         
         seg, has_interaction = get_current_segment(state)
         
         # 记录返回的数据
         response_data = {
             "feedback": continuation.feedback,
-            "new_segments": [s.model_dump() for s in continuation.segments],
+            "new_segments": _serialize_segments(continuation.segments),
             "current_index": state.current_index,
-            "current_segment": seg.model_dump() if seg else None,
+            "current_segment": _serialize_segment(seg),
             "has_interaction": has_interaction,
             "status": state.status,
         }

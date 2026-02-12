@@ -4,6 +4,7 @@ import logging
 import os
 from pathlib import Path
 from typing import Optional
+from app.utils.paths import AUDIO_DIR
 
 try:
     import edge_tts
@@ -13,22 +14,21 @@ except ImportError:
     logging.warning("edge-tts 未安装，TTS 功能将不可用。请运行: pip install edge-tts")
 
 from app.constants.voices import (
-    DEFAULT_VOICE_ID,
-    AVAILABLE_VOICES,
+    DEFAULT_FREE_VOICE_ID,
+    FREE_AVAILABLE_VOICES,
     get_voice_by_id,
-    is_valid_voice,
+    is_free_voice,
     PREVIEW_TEXT,
 )
 
 logger = logging.getLogger(__name__)
 
 # TTS 音频存储路径（使用绝对路径，避免相对路径问题）
-_BASE_DIR = Path(__file__).parent.parent.parent  # 项目根目录
-TTS_AUDIO_DIR = _BASE_DIR / "backend" / "data" / "audio" / "tts"
+TTS_AUDIO_DIR = AUDIO_DIR / "tts"
 TTS_AUDIO_DIR.mkdir(parents=True, exist_ok=True)
 
 # 预览音频存储路径
-PREVIEW_AUDIO_DIR = _BASE_DIR / "backend" / "data" / "audio" / "preview"
+PREVIEW_AUDIO_DIR = AUDIO_DIR / "preview"
 PREVIEW_AUDIO_DIR.mkdir(parents=True, exist_ok=True)
 
 logger.info(f"[TTS] 音频目录: {TTS_AUDIO_DIR}")
@@ -38,7 +38,7 @@ logger.info(f"[TTS] 预览目录: {PREVIEW_AUDIO_DIR}")
 async def generate_tts_audio(
     text: str,
     output_path: str,
-    voice_id: str = DEFAULT_VOICE_ID,
+    voice_id: str = DEFAULT_FREE_VOICE_ID,
     rate: str = "+0%",
     volume: str = "+0%",
     max_retries: int = 3,
@@ -64,9 +64,9 @@ async def generate_tts_audio(
         raise RuntimeError("edge-tts 未安装，无法生成语音")
     
     # 验证音色
-    if not is_valid_voice(voice_id):
-        logger.warning(f"音色 {voice_id} 无效，使用默认音色 {DEFAULT_VOICE_ID}")
-        voice_id = DEFAULT_VOICE_ID
+    if not is_free_voice(voice_id):
+        logger.warning(f"音色 {voice_id} 不是免费音色，使用默认音色 {DEFAULT_FREE_VOICE_ID}")
+        voice_id = DEFAULT_FREE_VOICE_ID
     
     # 确保输出目录存在
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
@@ -167,7 +167,7 @@ async def pregenerate_all_previews():
     success_count = 0
     failed_voices = []
     
-    for voice in AVAILABLE_VOICES:
+    for voice in FREE_AVAILABLE_VOICES:
         if not voice.get("is_recommended"):
             continue
         
@@ -184,7 +184,7 @@ async def pregenerate_all_previews():
             failed_voices.append(voice["name"])
             logger.warning(f"[TTS] ⚠️ {voice['name']} ({voice['id']}) 预览生成失败: {e}")
     
-    total = sum(1 for v in AVAILABLE_VOICES if v.get("is_recommended"))
+    total = sum(1 for v in FREE_AVAILABLE_VOICES if v.get("is_recommended"))
     
     if success_count > 0:
         logger.info(f"[TTS] ✅ 预生成完成: {success_count}/{total} 个音色成功")
@@ -233,7 +233,7 @@ async def get_or_generate_segment_audio(
     story_id: str,
     segment_index: int,
     text: str,
-    voice_id: str = DEFAULT_VOICE_ID,
+    voice_id: str = DEFAULT_FREE_VOICE_ID,
     speed: float = 1.0,
 ) -> str:
     """
@@ -276,3 +276,7 @@ async def get_or_generate_segment_audio(
         logger.error(f"[TTS] ❌ 音频生成失败或文件为空: {audio_path.name}")
     
     return f"data/audio/tts/{audio_path.name}"
+
+
+# 向后兼容（供旧代码导入）
+DEFAULT_VOICE_ID = DEFAULT_FREE_VOICE_ID

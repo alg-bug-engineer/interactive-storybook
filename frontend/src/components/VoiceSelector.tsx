@@ -12,6 +12,7 @@
 import { useState, useEffect, useRef } from "react";
 import { motion } from "framer-motion";
 import { useVoiceStore } from "@/stores/voiceStore";
+import { useAuthStore } from "@/stores/authStore";
 import { previewVoice, type Voice } from "@/services/api";
 
 interface VoiceSelectorProps {
@@ -28,6 +29,7 @@ export default function VoiceSelector({ onClose, showTitle = true }: VoiceSelect
     ttsAvailable,
     isLoading,
   } = useVoiceStore();
+  const token = useAuthStore((s) => s.token);
 
   const [playingVoiceId, setPlayingVoiceId] = useState<string | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
@@ -35,8 +37,8 @@ export default function VoiceSelector({ onClose, showTitle = true }: VoiceSelect
 
   useEffect(() => {
     // 加载音色列表
-    loadVoices();
-  }, [loadVoices]);
+    loadVoices(token);
+  }, [loadVoices, token]);
 
   // 清理音频
   useEffect(() => {
@@ -102,7 +104,7 @@ export default function VoiceSelector({ onClose, showTitle = true }: VoiceSelect
     return (
       <div className="p-8 text-center">
         <p className="text-red-500 mb-4">TTS 服务暂时不可用</p>
-        <p className="text-gray-600 text-sm">请联系管理员检查 edge-tts 是否已安装</p>
+        <p className="text-gray-600 text-sm">请联系管理员检查 TTS 依赖和配置</p>
       </div>
     );
   }

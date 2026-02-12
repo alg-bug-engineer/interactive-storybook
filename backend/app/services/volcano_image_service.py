@@ -1,7 +1,7 @@
 """火山即梦官方 API 服务（付费用户专享）"""
+import asyncio
 import time
 import logging
-import hashlib
 from pathlib import Path
 from typing import List
 from volcengine.visual.VisualService import VisualService
@@ -9,6 +9,7 @@ from volcengine.visual.VisualService import VisualService
 from app.config import get_settings
 from app.models.story import Character
 from app.constants.story_styles import get_style_prompt, DEFAULT_STYLE_ID
+from app.utils.paths import IMAGES_DIR
 from app.services.jimeng_service import (
     compress_and_save_image,
     EMOTION_MAP,
@@ -18,7 +19,7 @@ from app.services.jimeng_service import (
 logger = logging.getLogger(__name__)
 
 # 图片缓存目录
-VOLCANO_IMAGE_CACHE_DIR = Path("data/images/volcano")
+VOLCANO_IMAGE_CACHE_DIR = IMAGES_DIR / "volcano"
 VOLCANO_IMAGE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 
@@ -55,7 +56,7 @@ def _build_prompt_volcano(
 
     mood = EMOTION_MAP.get(emotion, EMOTION_MAP["warm"])
     style_prompt = get_style_prompt(style_id)
-    return f"{style_prompt}, {scene_description}, featuring {char_desc}, {mood}"
+    return f"{style_prompt}, {scene_description}, featuring {char_desc}, {mood}, square composition, 1:1 aspect ratio"
 
 
 async def generate_image_volcano(
@@ -89,12 +90,12 @@ async def generate_image_volcano(
     settings = get_settings()
     start_time = time.time()
 
-    logger.info(f"[火山即梦] 开始生成图片，风格: {style_id}")
+    logger.info(f"[火山即梦] 开始生成图片，风格: {style_id}, 目标尺寸: {width}x{height}")
     logger.debug(f"[火山即梦] Prompt (前100字): {prompt[:100]}...")
 
     try:
         # 初始化服务
-        visual_service = _init_visual_service()
+        visual_service = await asyncio.to_thread(_init_visual_service)
 
         # 第一步：提交任务
         submit_body = {
@@ -105,7 +106,9 @@ async def generate_image_volcano(
         }
 
         logger.info(f"[火山即梦] 提交任务中，参数: {submit_body}")
-        submit_resp = visual_service.cv_sync2async_submit_task(submit_body)
+        submit_resp = await asyncio.to_thread(
+            visual_service.cv_sync2async_submit_task, submit_body
+        )
 
         if submit_resp.get("code") != 10000:
             error_msg = f"任务提交失败: {submit_resp}"
@@ -132,7 +135,9 @@ async def generate_image_volcano(
         logger.info(f"[火山即梦] 开始轮询结果，最多 {max_retries} 次")
 
         for i in range(max_retries):
-            query_resp = visual_service.cv_sync2async_get_result(query_body)
+            query_resp = await asyncio.to_thread(
+                visual_service.cv_sync2async_get_result, query_body
+            )
 
             if query_resp.get("code") != 10000:
                 error_msg = f"查询失败: {query_resp}"
@@ -159,8 +164,7 @@ async def generate_image_volcano(
                     compressed_path = await compress_and_save_image(image_url)
                     logger.info(f"[火山即梦] ✅ 图片已压缩: {compressed_path}")
                     # 转换为可访问的相对路径 URL
-                    if compressed_path.startswith("data/images/"):
-                        from pathlib import Path
+                    if Path(compressed_path).is_file():
                         filename = Path(compressed_path).name
                         return f"/static/images/{filename}"
                     return compressed_path
@@ -171,7 +175,7 @@ async def generate_image_volcano(
                 logger.info(
                     f"[火山即梦] 任务处理中 ({status})... 第 {i + 1}/{max_retries} 次查询"
                 )
-                time.sleep(poll_interval)
+                await asyncio.sleep(poll_interval)
             else:
                 error_msg = f"任务状态异常: {status}"
                 logger.error(f"[火山即梦] ❌ {error_msg}")
@@ -218,11 +222,11 @@ async def generate_story_illustration_volcano(
     logger.info(f"[火山即梦] 完整 Prompt (前200字符): {prompt[:200]}...")
     logger.info(f"[火山即梦] 应用的风格prompt: {get_style_prompt(style_id)[:100]}...")
 
-    # 16:9 分辨率
+    # 固定 1:1 分辨率
     return await generate_image_volcano(
         prompt=prompt,
         style_id=style_id,
         width=1024,
-        height=576,  # 16:9 比例
+        height=1024,
         compress=True,
     )

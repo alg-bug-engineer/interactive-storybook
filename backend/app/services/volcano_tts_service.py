@@ -1,110 +1,50 @@
 """火山 TTS 官方 API 服务（付费用户专享）"""
 import asyncio
+import importlib.util
 import logging
-import uuid
-import json
+import sys
+from functools import lru_cache
 from pathlib import Path
 from typing import Optional
 
-import websockets
-
 from app.config import get_settings
+from app.utils.paths import AUDIO_DIR, PROJECT_ROOT
+from app.constants.voices import (
+    DEFAULT_PREMIUM_VOICE_ID,
+    PREVIEW_TEXT,
+    get_voice_by_id,
+    is_premium_voice,
+)
 
 logger = logging.getLogger(__name__)
 
 # TTS 音频存储路径
-_BASE_DIR = Path(__file__).parent.parent.parent
-VOLCANO_TTS_AUDIO_DIR = _BASE_DIR / "backend" / "data" / "audio" / "volcano_tts"
+VOLCANO_TTS_AUDIO_DIR = AUDIO_DIR / "volcano_tts"
 VOLCANO_TTS_AUDIO_DIR.mkdir(parents=True, exist_ok=True)
+VOLCANO_PREVIEW_AUDIO_DIR = AUDIO_DIR / "preview_volcano"
+VOLCANO_PREVIEW_AUDIO_DIR.mkdir(parents=True, exist_ok=True)
 
 logger.info(f"[火山TTS] 音频目录: {VOLCANO_TTS_AUDIO_DIR}")
 
 
-# ========== 协议实现（基于 apis/tts/protocols.py）==========
-from enum import IntEnum
-from dataclasses import dataclass
-import io
-import struct
+@lru_cache(maxsize=1)
+def _load_binary_module():
+    """
+    动态加载官方 demo 实现。
+    源文件：PROJECT_ROOT/apis/tts/binary.py
+    """
+    binary_path = PROJECT_ROOT / "apis" / "tts" / "binary.py"
+    if not binary_path.exists():
+        raise RuntimeError(f"缺少官方 demo 文件: {binary_path}")
 
+    spec = importlib.util.spec_from_file_location("volcano_tts_binary_demo", binary_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"无法加载官方 demo 文件: {binary_path}")
 
-class MsgType(IntEnum):
-    """消息类型"""
-
-    FullClientRequest = 0b1
-    AudioOnlyClient = 0b10
-    AudioOnlyServer = 0b1011
-    FrontEndResultServer = 0b1100
-    Error = 0b1111
-
-
-class MsgTypeFlagBits(IntEnum):
-    """消息标志位"""
-
-    NoSeq = 0
-    PositiveSeq = 0b1
-    NegativeSeq = 0b11
-
-
-@dataclass
-class Message:
-    """简化的 WebSocket 消息"""
-
-    type: MsgType = MsgType.FullClientRequest
-    payload: bytes = b""
-    sequence: int = 0
-
-    def marshal(self) -> bytes:
-        """序列化消息"""
-        buffer = io.BytesIO()
-
-        # 简化的协议头（4字节）
-        header = [
-            0x11,  # version=1, header_size=1 (4 bytes)
-            (self.type << 4) | MsgTypeFlagBits.NoSeq,
-            0x10,  # serialization=JSON, compression=None
-            0x00,  # reserved
-        ]
-        buffer.write(bytes(header))
-
-        # Payload 长度和内容
-        buffer.write(struct.pack(">I", len(self.payload)))
-        buffer.write(self.payload)
-
-        return buffer.getvalue()
-
-    @classmethod
-    def from_bytes(cls, data: bytes) -> "Message":
-        """反序列化消息"""
-        if len(data) < 8:
-            raise ValueError(f"数据太短: {len(data)} bytes")
-
-        msg_type = MsgType(data[1] >> 4)
-
-        # 跳过头部（4字节）
-        payload_size = struct.unpack(">I", data[4:8])[0]
-        payload = data[8 : 8 + payload_size] if payload_size > 0 else b""
-
-        # 检查是否有 sequence（音频消息）
-        sequence = 0
-        if msg_type == MsgType.AudioOnlyServer and len(data) > 8 + payload_size:
-            # sequence 在 payload 之前的 4 字节
-            pass  # 简化处理，不解析 sequence
-
-        return cls(type=msg_type, payload=payload, sequence=sequence)
-
-
-async def _receive_message(websocket) -> Message:
-    """接收 WebSocket 消息"""
-    data = await websocket.recv()
-    if isinstance(data, bytes):
-        return Message.from_bytes(data)
-    else:
-        raise ValueError(f"意外的消息类型: {type(data)}")
-
-
-async def _send_message(websocket, msg: Message) -> None:
-    """发送 WebSocket 消息"""
-    await websocket.send(msg.marshal())
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
 
 
 # ========== TTS 生成逻辑 ==========
@@ -115,6 +55,12 @@ def get_cluster(voice: str) -> str:
     if voice.startswith("S_"):
         return "volcano_icl"
     return "volcano_tts"
+
+
+def is_volcano_tts_available() -> bool:
+    """检查线上 TTS 配置是否可用。"""
+    settings = get_settings()
+    return bool(settings.volcano_tts_appid and settings.volcano_tts_access_token)
 
 
 async def generate_tts_audio_volcano(
@@ -141,16 +87,20 @@ async def generate_tts_audio_volcano(
         RuntimeError: TTS 生成失败
     """
     settings = get_settings()
+    _ = rate  # 保留接口兼容；火山 TTS 当前不使用 rate 参数
 
     # 验证配置
-    if not settings.volcano_tts_appid or not settings.volcano_tts_access_token:
+    if not is_volcano_tts_available():
         raise RuntimeError(
             "火山 TTS API 配置不完整，请检查 .env 文件中的 "
             "VOLCANO_TTS_APPID 和 VOLCANO_TTS_ACCESS_TOKEN"
         )
 
-    # 使用配置中的音色或用户指定的音色
-    voice_type = voice_id or settings.volcano_tts_voice_type
+    # 使用用户指定音色（付费音色）或默认付费音色
+    voice_type = (voice_id or settings.volcano_tts_voice_type or DEFAULT_PREMIUM_VOICE_ID).strip()
+    if not is_premium_voice(voice_type):
+        logger.warning(f"[火山TTS] 音色 {voice_type} 不是付费音色，回退到默认: {DEFAULT_PREMIUM_VOICE_ID}")
+        voice_type = DEFAULT_PREMIUM_VOICE_ID
     cluster = get_cluster(voice_type)
 
     # 确保输出目录存在
@@ -169,103 +119,37 @@ async def generate_tts_audio_volcano(
                 logger.info(f"[火山TTS] 等待 {delay}s 后重试...")
                 await asyncio.sleep(delay)
 
-            # 连接 WebSocket
-            headers = {
-                "Authorization": f"Bearer;{settings.volcano_tts_access_token}",
-            }
-
             logger.info(
                 f"[火山TTS] 连接中: {settings.volcano_tts_endpoint}"
             )
+            binary = _load_binary_module()
+            synthesize_to_file = getattr(binary, "synthesize_audio_to_file", None)
+            if synthesize_to_file is None:
+                raise RuntimeError("官方 demo binary.py 缺少 synthesize_audio_to_file 接口")
 
-            async with websockets.connect(
-                settings.volcano_tts_endpoint,
-                additional_headers=headers,
-                max_size=10 * 1024 * 1024,
-            ) as websocket:
-                logid = websocket.response_headers.get("x-tt-logid", "N/A")
-                logger.info(f"[火山TTS] ✅ 已连接，Logid: {logid}")
+            result = await synthesize_to_file(
+                appid=settings.volcano_tts_appid,
+                access_token=settings.volcano_tts_access_token,
+                voice_type=voice_type,
+                text=text,
+                output_path=output_path,
+                cluster=cluster,
+                encoding=settings.volcano_tts_encoding,
+                endpoint=settings.volcano_tts_endpoint,
+                proxy=None,
+                open_timeout=30.0,
+                recv_timeout=30.0,
+            )
 
-                # 准备请求
-                request = {
-                    "app": {
-                        "appid": settings.volcano_tts_appid,
-                        "token": settings.volcano_tts_access_token,
-                        "cluster": cluster,
-                    },
-                    "user": {
-                        "uid": str(uuid.uuid4()),
-                    },
-                    "audio": {
-                        "voice_type": voice_type,
-                        "encoding": settings.volcano_tts_encoding,
-                    },
-                    "request": {
-                        "reqid": str(uuid.uuid4()),
-                        "text": text,
-                        "operation": "submit",
-                        "with_timestamp": "1",
-                        "extra_param": json.dumps(
-                            {"disable_markdown_filter": False}
-                        ),
-                    },
-                }
+            output_file = Path(output_path)
+            if not output_file.exists() or output_file.stat().st_size == 0:
+                raise RuntimeError("未接收到音频数据（文件为空）")
 
-                # 发送请求
-                msg = Message(
-                    type=MsgType.FullClientRequest,
-                    payload=json.dumps(request).encode(),
-                )
-                await _send_message(websocket, msg)
-                logger.info("[火山TTS] ✅ 请求已发送")
-
-                # 接收音频数据
-                audio_data = bytearray()
-                while True:
-                    msg = await _receive_message(websocket)
-
-                    if msg.type == MsgType.FrontEndResultServer:
-                        # 忽略前端结果
-                        continue
-                    elif msg.type == MsgType.AudioOnlyServer:
-                        audio_data.extend(msg.payload)
-                        # 检查是否为最后一条消息（简化：假设连续接收即可）
-                        if len(msg.payload) == 0:
-                            break
-                    elif msg.type == MsgType.Error:
-                        error_msg = msg.payload.decode("utf-8", "ignore")
-                        raise RuntimeError(f"TTS 错误: {error_msg}")
-                    else:
-                        # 继续接收
-                        pass
-
-                    # 超时保护：如果收到音频数据但没有结束标记，继续尝试接收
-                    if len(audio_data) > 0:
-                        try:
-                            msg = await asyncio.wait_for(
-                                _receive_message(websocket), timeout=1.0
-                            )
-                        except asyncio.TimeoutError:
-                            # 超时，认为接收完成
-                            logger.info(
-                                "[火山TTS] 接收超时，认为音频接收完成"
-                            )
-                            break
-
-                # 检查音频数据
-                if not audio_data:
-                    raise RuntimeError("未接收到音频数据")
-
-                # 保存音频文件
-                with open(output_path, "wb") as f:
-                    f.write(audio_data)
-
-                file_size_kb = len(audio_data) / 1024
-                logger.info(
-                    f"[火山TTS] ✅ 音频生成成功: {output_path} ({file_size_kb:.1f}KB)"
-                )
-
-                return output_path
+            file_size_kb = output_file.stat().st_size / 1024
+            logger.info(
+                f"[火山TTS] ✅ 音频生成成功: {output_path} ({file_size_kb:.1f}KB, chunks={result.get('chunk_count', 0)}, logid={result.get('logid', 'N/A')})"
+            )
+            return output_path
 
         except Exception as e:
             last_error = e
@@ -298,3 +182,34 @@ def get_volcano_tts_audio_path(story_id: str, segment_index: int, voice_id: str)
     """
     filename = f"{story_id}_{segment_index}_{voice_id}.mp3"
     return VOLCANO_TTS_AUDIO_DIR / filename
+
+
+async def generate_preview_audio_volcano(voice_id: str, force_regenerate: bool = False) -> str:
+    """为付费音色生成预览音频。"""
+    if not is_volcano_tts_available():
+        raise RuntimeError("线上 TTS 服务不可用，请检查 VOLCANO_TTS_* 配置")
+
+    voice_info = get_voice_by_id(voice_id)
+    if not voice_info or not is_premium_voice(voice_id):
+        raise ValueError(f"无效的付费音色 ID: {voice_id}")
+
+    filename = f"{voice_id}.mp3"
+    output_path = VOLCANO_PREVIEW_AUDIO_DIR / filename
+
+    if not force_regenerate and output_path.exists() and output_path.stat().st_size > 0:
+        file_size_kb = output_path.stat().st_size / 1024
+        logger.info(f"[火山TTS] ✅ 使用缓存预览音频: {voice_id} ({file_size_kb:.1f}KB)")
+        return f"data/audio/preview_volcano/{filename}"
+
+    preview_text = PREVIEW_TEXT.format(voice_name=voice_info["name"])
+    await generate_tts_audio_volcano(
+        text=preview_text,
+        output_path=str(output_path),
+        voice_id=voice_id,
+        max_retries=3,
+    )
+
+    if not output_path.exists() or output_path.stat().st_size == 0:
+        raise RuntimeError(f"预览音频生成失败: {voice_id}")
+
+    return f"data/audio/preview_volcano/{filename}"

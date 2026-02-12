@@ -19,11 +19,11 @@ logger = logging.getLogger(__name__)
 
 
 def _create_openai_client() -> AsyncOpenAI:
-    """创建 OpenAI 客户端，带超时和代理配置"""
+    """创建 OpenAI 客户端，带超时配置并禁用系统代理"""
     settings = get_settings()
     
     try:
-        # 创建 httpx 客户端，配置超时和代理
+        # 创建 httpx 客户端，配置超时并禁用系统代理
         timeout = httpx.Timeout(
             connect=30.0,  # 连接超时
             read=120.0,    # 读取超时（LLM 响应可能较慢）
@@ -36,6 +36,7 @@ def _create_openai_client() -> AsyncOpenAI:
             timeout=timeout,
             limits=httpx.Limits(max_keepalive_connections=5, max_connections=10),
             follow_redirects=True,
+            trust_env=False,
         )
         
         # 创建 OpenAI 客户端
@@ -366,11 +367,23 @@ async def generate_story_outline(
         theme = pick_theme()
         character = pick_character()
         setting = pick_setting()
+        extra_seeds = []
+        if theme.get("scene_seed"):
+            extra_seeds.append(f"开场场景：{theme['scene_seed']}")
+        if theme.get("core_task"):
+            extra_seeds.append(f"核心任务：{theme['core_task']}")
+        if theme.get("plot_twist"):
+            extra_seeds.append(f"情节转折：{theme['plot_twist']}")
+        if theme.get("location_hint"):
+            extra_seeds.append(f"地点线索：{theme['location_hint']}")
+
         user_content = f"""请根据以下元素创作一个完整的儿童故事，输出一个 JSON。
 主题：{theme['theme']}，{theme['keywords']}，情节种子：{theme['plot_seed']}
 主角：{character.name}，{character.species}，{character.trait}，外观（英文）：{character.appearance}
 场景：{setting.location}，{setting.time}，{setting.weather}，视觉（英文）：{setting.visual_description}
 """
+        if extra_seeds:
+            user_content += f"补充设定：{'；'.join(extra_seeds)}\n"
     if total_pages is not None and total_pages >= 1:
         user_content += f"\n**篇幅要求（必须严格遵守）**：请生成恰好 {total_pages} 页（段），segments 数组长度必须为 {total_pages}。"
     if no_interaction:

@@ -2,36 +2,39 @@
 
 import { motion } from "framer-motion";
 import { useEffect } from "react";
+import { resolveImageUrl } from "@/utils/media";
 
 interface ImageDisplayProps {
   imageUrl?: string | null;
 }
 
 export default function ImageDisplay({ imageUrl }: ImageDisplayProps) {
+  const resolvedImageUrl = resolveImageUrl(imageUrl);
+
   useEffect(() => {
-    if (imageUrl) {
-      console.log("[前端] 图片 URL:", imageUrl.substring(0, 100));
+    if (resolvedImageUrl) {
+      console.log("[前端] 图片 URL:", resolvedImageUrl.substring(0, 100));
     } else {
       console.warn("[前端] ⚠️ 图片 URL 为空");
     }
-  }, [imageUrl]);
+  }, [resolvedImageUrl]);
 
   return (
     <div className="w-full h-full min-h-[240px] flex items-center justify-center bg-gradient-to-br from-primary/10 to-secondary/10 rounded-story-md overflow-hidden">
-      {imageUrl ? (
+      {resolvedImageUrl ? (
         <motion.img
-          key={imageUrl}
-          src={imageUrl}
+          key={resolvedImageUrl}
+          src={resolvedImageUrl}
           alt="故事插画"
           className="w-full h-full object-cover"
           initial={{ opacity: 0, scale: 0.98 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 0.5 }}
           onError={(e) => {
-            console.error("[前端] ❌ 图片加载失败:", imageUrl, e);
+            console.error("[前端] ❌ 图片加载失败:", resolvedImageUrl, e);
           }}
           onLoad={() => {
-            console.log("[前端] ✅ 图片加载成功:", imageUrl.substring(0, 50));
+            console.log("[前端] ✅ 图片加载成功:", resolvedImageUrl.substring(0, 50));
           }}
         />
       ) : (

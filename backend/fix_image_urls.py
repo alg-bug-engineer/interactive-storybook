@@ -7,17 +7,19 @@ import json
 import re
 from pathlib import Path
 
-DATA_DIR = Path("data/stories")
+DATA_DIR = Path(__file__).resolve().parent / "data" / "stories"
 
 def fix_url(url):
     """将绝对 URL 转换为相对路径"""
     if not url:
         return url
-    # 匹配 http://localhost:任意端口/static/images/文件名
-    pattern = r'http://localhost:\d+(/static/images/[^"]+)'
-    match = re.search(pattern, url)
+    # 匹配 http(s)://localhost|127.0.0.1:任意端口/static/images/文件名
+    pattern = r'https?://(?:localhost|127\.0\.0\.1):\d+(/static/images/[^"]+)'
+    match = re.search(pattern, url, re.IGNORECASE)
     if match:
         return match.group(1)
+    if url.startswith("static/images/"):
+        return f"/{url}"
     return url
 
 def fix_story_file(file_path):
@@ -69,6 +71,8 @@ def main():
     
     fixed_count = 0
     for file_path in story_files:
+        if file_path.name == "_index.json":
+            continue
         print(f"📖 处理: {file_path.name}")
         if fix_story_file(file_path):
             fixed_count += 1

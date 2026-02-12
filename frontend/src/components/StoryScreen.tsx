@@ -19,6 +19,7 @@ import InteractionPanel from "./InteractionPanel";
 import VideoGenerator from "./VideoGenerator";
 import AudioPlayer from "./AudioPlayer";
 import { useVoiceStore } from "@/stores/voiceStore";
+import { useAuthStore } from "@/stores/authStore";
 
 interface StoryScreenProps {
   initialData: StoryStartResponse;
@@ -55,6 +56,7 @@ export default function StoryScreen({ initialData, onBack }: StoryScreenProps) {
   const touchStartX = useRef<number>(0);
 
   const { selectedVoiceId, playbackSpeed, ttsAvailable } = useVoiceStore();
+  const token = useAuthStore((s) => s.token);
 
   // 使用 useCallback 稳定 onEnded 回调引用，避免 AudioPlayer 重复渲染
   const handleAudioEnded = useCallback(() => {
@@ -77,7 +79,7 @@ export default function StoryScreen({ initialData, onBack }: StoryScreenProps) {
       setAudioError(null);
       setAudioPlayCompleted(false);
       try {
-        const data = await getSegmentAudio(storyId, segmentIndex, selectedVoiceId, playbackSpeed);
+        const data = await getSegmentAudio(storyId, segmentIndex, selectedVoiceId, playbackSpeed, token);
         // 后端返回的 audio_url 是相对路径如 /api/audio/...，浏览器会自动解析为同源请求
         setSegmentAudioUrl(data.audio_url);
       } catch (e) {
@@ -88,7 +90,7 @@ export default function StoryScreen({ initialData, onBack }: StoryScreenProps) {
         setAudioLoading(false);
       }
     },
-    [storyId, selectedVoiceId, playbackSpeed, ttsAvailable]
+    [storyId, selectedVoiceId, playbackSpeed, ttsAvailable, token]
   );
 
   const pollSegmentImage = useCallback(
@@ -138,7 +140,7 @@ export default function StoryScreen({ initialData, onBack }: StoryScreenProps) {
     setLoadingNext(true);
     setError("");
     try {
-      const data: NextSegmentResponse = await nextSegment(storyId);
+      const data: NextSegmentResponse = await nextSegment(storyId, token);
       setNextSegmentContent(data.current_segment);
       pendingNext.current = {
         index: data.current_index,
@@ -154,7 +156,7 @@ export default function StoryScreen({ initialData, onBack }: StoryScreenProps) {
       setError(e instanceof Error ? e.message : "加载下一段失败");
       setLoadingNext(false);
     }
-  }, [storyId, status, loadingNext, currentIndex, totalSegments, allSegments, pollSegmentImage, fetchSegmentAudio]);
+  }, [storyId, status, loadingNext, currentIndex, totalSegments, allSegments, pollSegmentImage, fetchSegmentAudio, token]);
 
   /** 上一页：仅在已有完整段落列表时可用（如从画廊打开），支持左右翻页浏览 */
   const goPrev = useCallback(() => {
@@ -180,7 +182,8 @@ export default function StoryScreen({ initialData, onBack }: StoryScreenProps) {
           storyId,
           currentIndex,
           currentSegment.interaction_point.type,
-          userInput
+          userInput,
+          token
         );
         setFeedback(data.feedback);
         setTotalSegments((prev) => prev + (data.new_segments?.length ?? 0));
@@ -204,15 +207,18 @@ export default function StoryScreen({ initialData, onBack }: StoryScreenProps) {
         setLoadingInteract(false);
       }
     },
-    [storyId, currentIndex, currentSegment, loadingInteract, pollSegmentImage, fetchSegmentAudio]
+    [storyId, currentIndex, currentSegment, loadingInteract, pollSegmentImage, fetchSegmentAudio, token]
   );
 
   useEffect(() => {
-    if (initialData.current_segment?.text && !hasInteraction) {
+    if (initialData.current_segment?.text) {
       fetchSegmentAudio(initialData.current_index, initialData.current_segment.text);
     }
+    if (initialData.current_segment && !initialData.current_segment.image_url) {
+      pollSegmentImage(initialData.current_index, 0);
+    }
     return () => {};
-  }, []);
+  }, [initialData, fetchSegmentAudio, pollSegmentImage]);
 
   // 键盘方向键支持：左右翻页
   useEffect(() => {
@@ -252,7 +258,7 @@ export default function StoryScreen({ initialData, onBack }: StoryScreenProps) {
 
   // 关键：当用户切换音色/倍速时，让“当前页”的朗读也立刻生效（重新拉取对应音频）
   useEffect(() => {
-    if (!currentSegment?.text || showInteraction) return;
+    if (!currentSegment?.text) return;
     fetchSegmentAudio(currentIndex, currentSegment.text);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedVoiceId]);  // 移除 playbackSpeed，倍速由 AudioPlayer 内部处理
@@ -262,8 +268,8 @@ export default function StoryScreen({ initialData, onBack }: StoryScreenProps) {
     if (allSegments || hasInteraction || status === "completed" || loadingNext) return;
     const nextIdx = currentIndex + 1;
     if (nextIdx >= totalSegments) return;
-    preloadSegmentImage(storyId, nextIdx).catch(() => {});
-  }, [storyId, currentIndex, totalSegments, hasInteraction, status, allSegments, loadingNext]);
+    preloadSegmentImage(storyId, nextIdx, token).catch(() => {});
+  }, [storyId, currentIndex, totalSegments, hasInteraction, status, allSegments, loadingNext, token]);
 
   // 音频播放完成后自动翻页：当 audioPlayCompleted 变为 true 时，延迟后自动翻页
   useEffect(() => {
@@ -287,7 +293,7 @@ export default function StoryScreen({ initialData, onBack }: StoryScreenProps) {
     currentSegment?.interaction_point &&
     !feedback &&
     !allSegments &&  // 只有新生成的故事才支持交互
-    (audioPlayCompleted || !segmentAudioUrl)  // 音频播放完成或没有音频时才显示交互
+    (audioPlayCompleted || (!segmentAudioUrl && !audioLoading))  // 音频播放完成，或确无音频且已结束加载
   );
 
   const handleBookTap = () => {

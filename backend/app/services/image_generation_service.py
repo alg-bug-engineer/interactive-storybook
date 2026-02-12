@@ -82,13 +82,13 @@ async def generate_story_image(
                 prompt=prompt,
                 style_id=style_id,
                 width=1024,
-                height=576,  # 16:9
+                height=1024,
                 compress=True,
             )
         else:
             logger.info("[图片生成] 🐌 使用本地 jimeng-api 服务（免费用户）")
             image_path = await generate_image_local(
-                prompt=prompt, ratio="16:9", resolution="1k", compress=True
+                prompt=prompt, ratio="1:1", resolution="1k", compress=True
             )
 
         # 保存缓存
@@ -123,7 +123,7 @@ async def generate_story_image(
             )
             try:
                 image_path = await generate_image_local(
-                    prompt=prompt, ratio="16:9", resolution="1k", compress=True
+                    prompt=prompt, ratio="1:1", resolution="1k", compress=True
                 )
                 save_image_cache(prompt, style_id, image_path)
                 logger.info("[图片生成] ✅ 降级到本地服务成功")

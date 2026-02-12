@@ -27,7 +27,7 @@ class Settings(BaseSettings):
 
     # 视频生成
     enable_video_generation: bool = True
-    video_output_dir: str = "/tmp/storybook_videos"
+    video_output_dir: str = str((Path(__file__).resolve().parent.parent / "storybook_videos").resolve())
 
     # 用户数据（本地文件存储）
     data_dir: str = "data"

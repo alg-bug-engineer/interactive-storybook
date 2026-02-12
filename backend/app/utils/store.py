@@ -3,8 +3,9 @@ import json
 import logging
 from typing import Optional, List
 import uuid
-from pathlib import Path
 from app.models.story import StoryState
+from app.utils.paths import STORIES_DIR
+from app.utils.url_utils import normalize_image_url
 
 logger = logging.getLogger(__name__)
 
@@ -13,8 +14,6 @@ _stories: dict[str, StoryState] = {}
 _story_order: List[str] = []  # 创建顺序，用于画廊（新在前）
 
 # 文件存储目录
-STORIES_DIR = Path("data/stories")
-STORIES_DIR.mkdir(parents=True, exist_ok=True)
 INDEX_FILE = STORIES_DIR / "_index.json"
 
 
@@ -24,6 +23,9 @@ def _save_story_to_file(state: StoryState) -> None:
         story_file = STORIES_DIR / f"{state.id}.json"
         # 使用 model_dump() 转为字典，再序列化为 JSON
         data = state.model_dump()
+        segments = data.get("segments") or []
+        for seg in segments:
+            seg["image_url"] = normalize_image_url(seg.get("image_url"))
         story_file.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
         logger.debug(f"[存储] 故事已保存到文件: {story_file}")
     except Exception as e:
@@ -63,8 +65,19 @@ def load_stories_from_disk() -> None:
             data = json.loads(story_file.read_text(encoding="utf-8"))
             story_id = data.get("id")
             if story_id:
+                # 启动时修复历史数据中的图片 URL（仅内存修复，保存时持久化）
+                segments = data.get("segments") or []
+                normalized = False
+                for seg in segments:
+                    old = seg.get("image_url")
+                    new = normalize_image_url(old)
+                    if old != new:
+                        seg["image_url"] = new
+                        normalized = True
                 _stories[story_id] = StoryState(**data)
                 loaded_count += 1
+                if normalized:
+                    _save_story_to_file(_stories[story_id])
                 logger.debug(f"[存储] 加载故事: {story_id} - {data.get('title', 'untitled')}")
         except Exception as e:
             logger.error(f"[存储] ❌ 加载故事文件失败 {story_file}: {e}", exc_info=True)
@@ -74,6 +87,8 @@ def load_stories_from_disk() -> None:
 
 def save_story(state: StoryState) -> StoryState:
     """保存故事到内存和文件"""
+    for seg in state.segments:
+        seg.image_url = normalize_image_url(seg.image_url)
     _stories[state.id] = state
     if state.id not in _story_order:
         _story_order.append(state.id)
@@ -113,6 +128,8 @@ def update_story(story_id: str, **kwargs) -> Optional[StoryState]:
     for k, v in kwargs.items():
         if hasattr(s, k):
             setattr(s, k, v)
+    for seg in s.segments:
+        seg.image_url = normalize_image_url(seg.image_url)
     _save_story_to_file(s)
     return s
 
@@ -133,7 +150,7 @@ def list_stories() -> List[dict]:
             continue
         cover_url = None
         if state.segments and state.segments[0].image_url:
-            cover_url = state.segments[0].image_url
+            cover_url = normalize_image_url(state.segments[0].image_url)
         result.append({
             "story_id": state.id,
             "title": state.title,

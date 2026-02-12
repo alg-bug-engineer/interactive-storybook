@@ -1,18 +1,25 @@
 """音色 API：音色列表、试听、用户偏好设置"""
 import logging
 from fastapi import APIRouter, HTTPException, Depends
-from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from app.constants.voices import (
-    AVAILABLE_VOICES,
-    DEFAULT_VOICE_ID,
+    get_available_voices,
+    get_default_voice_id,
     get_voice_by_id,
     get_recommended_voices,
     is_valid_voice,
+    is_free_voice,
+    is_premium_voice,
+    normalize_voice_for_user,
 )
 from app.services.tts_service import generate_preview_audio, HAS_EDGE_TTS
+from app.services.volcano_tts_service import (
+    generate_preview_audio_volcano,
+    is_volcano_tts_available,
+)
 from app.routers.auth import get_current_user_optional
+from app.utils.service_tier import is_premium_user
 from app.utils.user_store import get_user_by_email, update_user_preferences
 
 logger = logging.getLogger(__name__)
@@ -21,53 +28,64 @@ router = APIRouter(prefix="/api/voices", tags=["voices"])
 
 
 @router.get("/list")
-async def list_voices():
-    """获取所有可用音色列表"""
+async def list_voices(current_user: dict = Depends(get_current_user_optional)):
+    """按当前用户等级返回可用音色列表。"""
+    premium = is_premium_user(current_user)
+    voices = get_available_voices(current_user)
+    default_voice_id = get_default_voice_id(current_user)
+    tts_available = is_volcano_tts_available() if premium else HAS_EDGE_TTS
+
     return {
-        "voices": AVAILABLE_VOICES,
-        "default_voice_id": DEFAULT_VOICE_ID,
-        "tts_available": HAS_EDGE_TTS,
+        "voices": voices,
+        "default_voice_id": default_voice_id,
+        "tts_available": tts_available,
+        "tier": "premium" if premium else "free",
     }
 
 
 @router.get("/recommended")
-async def get_recommended():
-    """获取推荐音色列表（用于首页快速选择）"""
+async def get_recommended(current_user: dict = Depends(get_current_user_optional)):
+    """按用户等级返回推荐音色列表（用于首页快速选择）。"""
     return {
-        "voices": get_recommended_voices(),
-        "default_voice_id": DEFAULT_VOICE_ID,
+        "voices": get_recommended_voices(current_user),
+        "default_voice_id": get_default_voice_id(current_user),
     }
 
 
 @router.get("/preview/{voice_id}")
-async def preview_voice(voice_id: str):
+async def preview_voice(voice_id: str, current_user: dict = Depends(get_current_user_optional)):
     """
     试听指定音色
     
     返回音频文件 URL 或直接返回音频文件
     """
-    if not HAS_EDGE_TTS:
-        raise HTTPException(
-            status_code=503,
-            detail="TTS 服务不可用，请联系管理员安装 edge-tts",
-        )
-    
-    # 验证音色
-    if not is_valid_voice(voice_id):
+    voice_info = get_voice_by_id(voice_id)
+    if not voice_info:
         raise HTTPException(status_code=404, detail=f"音色不存在: {voice_id}")
     
     try:
-        # 生成或获取预览音频
-        audio_path = await generate_preview_audio(voice_id)
+        if is_premium_voice(voice_id):
+            if not is_volcano_tts_available():
+                raise HTTPException(status_code=503, detail="线上 TTS 配置不可用")
+            audio_path = await generate_preview_audio_volcano(voice_id)
+        else:
+            if not HAS_EDGE_TTS:
+                raise HTTPException(
+                    status_code=503,
+                    detail="TTS 服务不可用，请联系管理员安装 edge-tts",
+                )
+            if not is_free_voice(voice_id):
+                raise HTTPException(status_code=400, detail="该音色不属于免费语音库")
+            audio_path = await generate_preview_audio(voice_id)
         
-        # 返回完整的音频 URL 路径
-        # audio_path 格式: data/audio/preview/zh-CN-XiaoxiaoNeural.mp3
         return {
             "voice_id": voice_id,
-            "audio_url": f"/api/audio/{audio_path}",  # /api/audio/data/audio/preview/xxx.mp3
-            "voice_info": get_voice_by_id(voice_id),
+            "audio_url": f"/api/audio/{audio_path}",
+            "voice_info": voice_info,
         }
         
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"[API] 音色预览失败: {voice_id}, error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"音色预览失败: {str(e)}")
@@ -97,9 +115,14 @@ async def save_preferences(
             "preferences": body.model_dump(),
         }
     
-    # 验证音色
-    if body.preferred_voice and not is_valid_voice(body.preferred_voice):
-        raise HTTPException(status_code=400, detail=f"无效的音色 ID: {body.preferred_voice}")
+    normalized_preferred_voice = None
+    if body.preferred_voice:
+        if not is_valid_voice(body.preferred_voice, current_user):
+            raise HTTPException(
+                status_code=400,
+                detail=f"该账号等级不可使用音色: {body.preferred_voice}",
+            )
+        normalized_preferred_voice = normalize_voice_for_user(body.preferred_voice, current_user)
     
     # 验证倍速
     if body.playback_speed is not None:
@@ -111,8 +134,8 @@ async def save_preferences(
         
         # 更新用户偏好
         preferences = {}
-        if body.preferred_voice:
-            preferences["preferred_voice"] = body.preferred_voice
+        if normalized_preferred_voice:
+            preferences["preferred_voice"] = normalized_preferred_voice
         if body.playback_speed is not None:
             preferences["playback_speed"] = body.playback_speed
         
@@ -138,9 +161,11 @@ async def get_preferences(current_user: dict = Depends(get_current_user_optional
     
     未登录时返回默认值
     """
+    default_voice_id = get_default_voice_id(current_user)
+
     if not current_user:
         return {
-            "preferred_voice": DEFAULT_VOICE_ID,
+            "preferred_voice": default_voice_id,
             "playback_speed": 1.0,
         }
     
@@ -150,12 +175,14 @@ async def get_preferences(current_user: dict = Depends(get_current_user_optional
         
         if not user:
             return {
-                "preferred_voice": DEFAULT_VOICE_ID,
+                "preferred_voice": default_voice_id,
                 "playback_speed": 1.0,
             }
-        
+        preferred_voice = user.get("preferred_voice", default_voice_id)
+        preferred_voice = normalize_voice_for_user(preferred_voice, current_user)
+
         return {
-            "preferred_voice": user.get("preferred_voice", DEFAULT_VOICE_ID),
+            "preferred_voice": preferred_voice,
             "playback_speed": user.get("playback_speed", 1.0),
         }
         
@@ -163,6 +190,6 @@ async def get_preferences(current_user: dict = Depends(get_current_user_optional
         logger.error(f"[API] 获取用户偏好失败: {e}", exc_info=True)
         # 失败时返回默认值，不阻断用户使用
         return {
-            "preferred_voice": DEFAULT_VOICE_ID,
+            "preferred_voice": default_voice_id,
             "playback_speed": 1.0,
         }

@@ -1,15 +1,15 @@
 """音频文件服务：提供 TTS 音频和预览音频的访问"""
 import logging
-from pathlib import Path
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
+from app.utils.paths import AUDIO_DIR
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/audio", tags=["audio"])
 
 # 音频文件根目录
-AUDIO_BASE_DIR = Path("backend/data/audio")
+AUDIO_BASE_DIR = AUDIO_DIR
 
 
 @router.get("/data/audio/preview/{filename}")
@@ -28,6 +28,27 @@ async def get_preview_audio(filename: str):
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="音频文件不存在")
     
+    return FileResponse(
+        path=str(file_path),
+        media_type="audio/mpeg",
+        filename=filename,
+    )
+
+
+@router.get("/data/audio/preview_volcano/{filename}")
+async def get_preview_audio_volcano(filename: str):
+    """
+    获取线上 TTS 预览音频文件
+
+    示例: /api/audio/data/audio/preview_volcano/zh_female_sajiaonvyou_moon_bigtts.mp3
+    """
+    if ".." in filename or "/" in filename or "\\" in filename:
+        raise HTTPException(status_code=400, detail="无效的文件名")
+
+    file_path = AUDIO_BASE_DIR / "preview_volcano" / filename
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="音频文件不存在")
+
     return FileResponse(
         path=str(file_path),
         media_type="audio/mpeg",

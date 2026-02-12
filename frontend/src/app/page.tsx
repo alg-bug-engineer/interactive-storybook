@@ -18,6 +18,7 @@ import VoiceSelector from "@/components/VoiceSelector";
 import StyleSelector from "@/components/StyleSelector";
 import { useAuthStore } from "@/stores/authStore";
 import { useVoiceStore } from "@/stores/voiceStore";
+import { resolveImageUrl } from "@/utils/media";
 
 const GALLERY_VISIBLE_INITIAL = 6;
 
@@ -57,9 +58,12 @@ export default function Home() {
 
   useEffect(() => {
     loadFromStorage();
-    // 加载音色列表
-    loadVoices();
-  }, [loadFromStorage, loadVoices]);
+  }, [loadFromStorage]);
+
+  // 根据登录状态加载对应等级音色（免费/付费）
+  useEffect(() => {
+    loadVoices(token);
+  }, [token, user?.is_paid, loadVoices]);
 
   useEffect(() => {
     if (token && !user) {
@@ -417,40 +421,43 @@ export default function Home() {
         ) : (
           <>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-              {visibleGallery.map((item) => (
-                <button
-                  key={item.story_id}
-                  onClick={() => handleOpenFromGallery(item.story_id)}
-                  className="rounded-story-md overflow-hidden border-2 bg-white shadow hover:shadow-lg transition text-left transform hover:scale-105"
-                  style={{
-                    borderColor: '#a0826d',
-                    boxShadow: '0 8px 20px rgba(0,0,0,0.4)',
-                    background: 'linear-gradient(135deg, #fffef9 0%, #f8f3ed 100%)',
-                  }}
-                >
-                  <div className="aspect-[4/3] bg-bg-main flex items-center justify-center">
-                    {item.cover_url ? (
-                      <img
-                        src={item.cover_url}
-                        alt=""
-                        className="w-full h-full object-cover"
-                      />
-                    ) : (
-                      <span className="text-text-ui/60 text-sm">暂无封面</span>
-                    )}
-                  </div>
-                  <div className="p-2">
-                    <p className="font-medium text-text-story truncate text-sm" title={item.title}>
-                      {item.title}
-                    </p>
-                    {item.theme && (
-                      <p className="text-text-ui text-xs truncate" title={item.theme}>
-                        {item.theme}
+              {visibleGallery.map((item) => {
+                const coverUrl = resolveImageUrl(item.cover_url);
+                return (
+                  <button
+                    key={item.story_id}
+                    onClick={() => handleOpenFromGallery(item.story_id)}
+                    className="rounded-story-md overflow-hidden border-2 bg-white shadow hover:shadow-lg transition text-left transform hover:scale-105"
+                    style={{
+                      borderColor: '#a0826d',
+                      boxShadow: '0 8px 20px rgba(0,0,0,0.4)',
+                      background: 'linear-gradient(135deg, #fffef9 0%, #f8f3ed 100%)',
+                    }}
+                  >
+                    <div className="aspect-[4/3] bg-bg-main flex items-center justify-center">
+                      {coverUrl ? (
+                        <img
+                          src={coverUrl}
+                          alt=""
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <span className="text-text-ui/60 text-sm">暂无封面</span>
+                      )}
+                    </div>
+                    <div className="p-2">
+                      <p className="font-medium text-text-story truncate text-sm" title={item.title}>
+                        {item.title}
                       </p>
-                    )}
-                  </div>
-                </button>
-              ))}
+                      {item.theme && (
+                        <p className="text-text-ui text-xs truncate" title={item.theme}>
+                          {item.theme}
+                        </p>
+                      )}
+                    </div>
+                  </button>
+                );
+              })}
             </div>
             {hasMoreGallery && (
               <button

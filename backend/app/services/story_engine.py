@@ -42,17 +42,8 @@ async def start_new_story(
                     image_url=seg.image_url,
                 )
 
-    # 为第一段生成图片
-    logger.info(f"[故事引擎] 使用风格 {style_id} 生成第一段图片")
-    first = segments[0]
-    first.image_url = await generate_story_image(
-        scene_description=first.scene_description,
-        characters=outline.characters,
-        emotion=first.emotion,
-        style_id=style_id,
-        user=user,
-    )
-    segments[0] = first
+    # 优化：start 接口先返回文本，不阻塞等待首图，图片后台异步生成
+    logger.info(f"[故事引擎] start 阶段跳过同步首图生成，改为后台异步（style={style_id}）")
 
     state = StoryState(
         id=story_id,
@@ -69,14 +60,21 @@ async def start_new_story(
     save_story(state)
     logger.info(f"[故事引擎] 故事已保存，story_id: {story_id}, style_id: {state.style_id}")
 
-    if len(segments) > 1:
-        if no_interaction:
-            # 无互动模式：后台依次生成剩余全部插画，不等待用户翻页
-            asyncio.create_task(
-                _generate_images_async(story_id, 1, len(segments) - 1, outline.characters, style_id=style_id, user=user)
+    if no_interaction:
+        # 无互动模式：后台依次生成全部插画（包含首图）
+        asyncio.create_task(
+            _generate_images_async(
+                story_id, 0, len(segments), outline.characters, style_id=style_id, user=user
             )
-        else:
-            asyncio.create_task(_pregenerate_image(story_id, 1, style_id=style_id, user=user))
+        )
+    else:
+        # 互动模式：先后台生成前两页（首图+下一页），保证首屏尽快可见
+        pregen_count = min(2, len(segments))
+        asyncio.create_task(
+            _generate_images_async(
+                story_id, 0, pregen_count, outline.characters, style_id=style_id, user=user
+            )
+        )
 
     return state
 

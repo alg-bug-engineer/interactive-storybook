@@ -14,6 +14,7 @@ from PIL import Image
 from app.config import get_settings
 from app.models.story import Character, StorySegment
 from app.constants.story_styles import get_style_prompt, DEFAULT_STYLE_ID
+from app.utils.paths import IMAGES_DIR
 
 logger = logging.getLogger(__name__)
 
@@ -35,10 +36,9 @@ EMOTION_MAP = {
 DEFAULT_STYLE = "whimsical children's book watercolor illustration, Pixar style, cute rounded characters, storybook illustration, rich colors, detailed background, high quality, masterpiece"
 
 # 压缩图片配置
-COMPRESSED_IMAGES_DIR = Path("data/images")
-COMPRESSED_IMAGES_DIR.mkdir(parents=True, exist_ok=True)
+COMPRESSED_IMAGES_DIR = IMAGES_DIR
 COMPRESSION_QUALITY = 85  # JPEG 压缩质量（1-100）
-MAX_IMAGE_WIDTH = 1280  # 最大宽度，保持16:9比例
+TARGET_IMAGE_SIZE = 1024  # 固定 1:1，1024x1024
 
 
 def _build_prompt(
@@ -90,7 +90,7 @@ async def compress_and_save_image(image_url: str) -> str:
         # 处理URL图片
         else:
             logger.info(f"[图片压缩] 下载图片: {image_url[:80]}...")
-            async with httpx.AsyncClient(timeout=120) as client:
+            async with httpx.AsyncClient(timeout=120, trust_env=False) as client:
                 resp = await client.get(image_url)
                 resp.raise_for_status()
                 image = Image.open(io.BytesIO(resp.content))
@@ -105,13 +105,17 @@ async def compress_and_save_image(image_url: str) -> str:
         elif image.mode != 'RGB':
             image = image.convert('RGB')
         
-        # 等比例缩放（保持16:9）
+        # 统一成 1:1：中心裁剪 + 缩放到 1024x1024，保证后续视频画幅一致
         original_width, original_height = image.size
-        if original_width > MAX_IMAGE_WIDTH:
-            ratio = MAX_IMAGE_WIDTH / original_width
-            new_height = int(original_height * ratio)
-            image = image.resize((MAX_IMAGE_WIDTH, new_height), Image.Resampling.LANCZOS)
-            logger.info(f"[图片压缩] 缩放: {original_width}x{original_height} -> {MAX_IMAGE_WIDTH}x{new_height}")
+        side = min(original_width, original_height)
+        left = max((original_width - side) // 2, 0)
+        top = max((original_height - side) // 2, 0)
+        image = image.crop((left, top, left + side, top + side))
+        if image.size != (TARGET_IMAGE_SIZE, TARGET_IMAGE_SIZE):
+            image = image.resize((TARGET_IMAGE_SIZE, TARGET_IMAGE_SIZE), Image.Resampling.LANCZOS)
+        logger.info(
+            f"[图片压缩] 归一化尺寸: {original_width}x{original_height} -> {TARGET_IMAGE_SIZE}x{TARGET_IMAGE_SIZE}"
+        )
         
         # 保存为JPEG，压缩质量85
         image.save(output_path, 'JPEG', quality=COMPRESSION_QUALITY, optimize=True)
@@ -129,7 +133,7 @@ async def compress_and_save_image(image_url: str) -> str:
 async def generate_image(
     prompt: str,
     *,
-    ratio: str = "16:9",
+    ratio: str = "1:1",
     resolution: str = "1k",
     negative_prompt: str = NEGATIVE_PROMPT,
     compress: bool = True,
@@ -154,7 +158,7 @@ async def generate_image(
     
     try:
         # 增加超时时间到 300 秒（5分钟），即梦生成可能需要较长时间
-        async with httpx.AsyncClient(timeout=300) as client:
+        async with httpx.AsyncClient(timeout=300, trust_env=False) as client:
             resp = await client.post(url, headers=headers, json=payload)
             logger.info(f"[即梦API] 响应状态码: {resp.status_code}")
             
@@ -183,7 +187,7 @@ async def generate_image(
         if compress:
             compressed_path = await compress_and_save_image(image_url)
             # 转换为可访问的URL路径
-            if compressed_path.startswith("data/images/"):
+            if Path(compressed_path).is_file():
                 # 返回相对路径，浏览器会自动使用当前域名（开发环境/生产环境通用）
                 filename = Path(compressed_path).name
                 return f"/static/images/{filename}"
@@ -218,4 +222,4 @@ async def generate_story_illustration(
     logger.info(f"[即梦API] 完整 Prompt (前200字符): {prompt[:200]}...")
     logger.info(f"[即梦API] 应用的风格prompt: {get_style_prompt(style_id)[:100]}...")
     # 降低分辨率从2k到1k，并启用压缩
-    return await generate_image(prompt=prompt, ratio="16:9", resolution="1k", compress=True)
+    return await generate_image(prompt=prompt, ratio="1:1", resolution="1k", compress=True)

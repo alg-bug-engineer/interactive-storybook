@@ -1,3 +1,5 @@
+backend/backend/data
+apis
 # Dependencies
 node_modules/
 __pycache__/
@@ -5,7 +7,7 @@ __pycache__/
 .venv/
 venv/
 env/
-
+backend/data
 # Env
 .env
 .env.local
@@ -18,18 +20,15 @@ dist/
 build/
 *.egg-info/
 .eggs/
-apis/
 # IDE
 .idea/
 .vscode/
 *.swp
 .DS_Store
 storybook_videos
-moviepy-master
 # Logs
 *.log
 logs/
-data/
 moviepy-master.zip
 
 # Test / Coverage
